@@ -1,8 +1,5 @@
-from modules.pdf_extraction import extract_text_from_pages, select_pdf_file
-from modules.pdf_extraction import parse_column_data
-from modules.pdf_extraction import get_validated_table_info
-from modules.pdf_extraction import get_page_pixel_data
-from modules.pdf_extraction import process_tables_to_df
+
+import logging
 from dotenv import load_dotenv
 from openai import OpenAI
 import pandas as pd
@@ -11,108 +8,256 @@ import os
 import pymupdf
 import time
 
+from modules.pdf_extraction import (
+    extract_text_from_pages,
+    select_pdf_file,
+    write_output_final,
+    parse_column_data,
+    get_validated_table_info,
+    get_page_pixel_data,
+    process_tables_to_df
+)
+
+# -------------------------------------------------------------------
+# Configure Logging
+# Change the level to DEBUG for more detailed output if needed
+# -------------------------------------------------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
 # to do.. table names headers can be dupilcated may be helpful to use say table 1,2, etc to deitigusih tem. 
 # use pdf plumber  page.find_tables() and gpt table count for confidence calculation. 
 # the same table can be extraected twice or more if the header is not clear
 # extract header witout the text 
 
-file_name = 'test_8'    
-user_text='Extract all data from the table(s) the header'
+file_name = 'split_test_1'    
+user_text = 'Extract all data from the table(s) the header'
 
-# 1. Load Credientials
-
-# Load environment variables from the .env file
+# 1. Load Credentials
+logging.info("Loading environment variables from .env file.")
 load_dotenv()
+
 # Get the API key from the environment variable
 open_api_key = os.getenv('OPENAI_API_KEY')
-# Initialize OpenAI client
-openai_client = OpenAI(api_key = open_api_key)
+if not open_api_key:
+    logging.warning("OPENAI_API_KEY is not set. Please check your .env file.")
 
-
-
-
+logging.info("Initializing OpenAI client.")
+openai_client = OpenAI(api_key=open_api_key)
 
 # 2. Select PDF file and extract text
+logging.info("Prompting user to select a PDF file.")
 pdf_path = select_pdf_file()
+
+if not pdf_path:
+    logging.error("No PDF file was selected. Exiting.")
+    raise SystemExit("No PDF file selected.")
+
+logging.info(f"Opening PDF file: {pdf_path}")
 doc = pymupdf.open(pdf_path)
-total_pages = doc.page_count  # total number of pages in the document
+total_pages = doc.page_count
 page_indices = range(total_pages)
-
-# page_indices can be a list of page numbers to process
-
+logging.info(f"Total pages in the document: {total_pages}")
 
 # Start timing
 start_time = time.time()
 
 async def process_page():
+    logging.info("Starting asynchronous page processing.")
     tasks = []
     results_output = []
-    # Create all tasks first 
+
     async with asyncio.TaskGroup() as tg:
         for page_no in page_indices:
+            logging.debug(f"Loading page {page_no + 1}.")
             page = doc.load_page(page_no)
             extracted_text = page.get_text()
-            
-            # extracted_text = extract_text_from_pages(pdf_path, pages=page_no)
-            base64_image = get_page_pixel_data(pdf_path=pdf_path, page_no=page_no, 
-                                dpi = 500, image_type = 'png')
+
+            logging.debug(f"Converting page {page_no + 1} to base64 image.")
+            base64_image = get_page_pixel_data(
+                pdf_path=pdf_path,
+                page_no=page_no,
+                dpi=500,
+                image_type='png'
+            )
         
+            logging.debug("Validating table information via LLM.")
             num_tables, table_headers, table_location, confidence_score_0 = await get_validated_table_info(
-                text_input=extracted_text, 
-                open_api_key=open_api_key, 
+                text_input=extracted_text,
+                open_api_key=open_api_key,
                 base64_image=base64_image
             )
 
             if num_tables == 0:
-                print(f"No tables found on page {page_no + 1}, skipping...")
+                logging.info(f"No tables found on page {page_no + 1}, skipping...")
                 continue
+
+            logging.info(f"Found {num_tables} table(s) on page {page_no + 1}. Headers: {table_headers}")
     
             tasks.append(tg.create_task(process_tables_to_df(
-                table_headers, 
+                table_headers,
                 table_location,
-                user_text, 
-                extracted_text, 
-                base64_image, 
+                user_text,
+                extracted_text,
+                base64_image,
                 open_api_key,
-                page_no)))
-            
+                page_no
+            )))
+        
         # Await all tasks to complete
+        logging.debug("Awaiting all table-processing tasks to finish.")
         for task in tasks:
             results_output.append(await task)
     
     if not results_output:
+        logging.error("No tables found on any of the processed pages.")
         raise ValueError("No tables found on any of the processed pages")
             
-    df_out_1 = pd.concat(results_output, ignore_index=True)
-    
-    return df_out_1
+    return results_output
 
-
+logging.info("Running the asynchronous process to parse PDF pages.")
 output_final = asyncio.run(process_page())
 
 # Calculate elapsed time
 end_time = time.time()
 elapsed_time = end_time - start_time
-print(f"Processing took {elapsed_time:.2f} seconds")
+logging.info(f"Processing took {elapsed_time:.2f} seconds")
 
-# Save to Excel
-output_final.to_excel(f'files/{file_name}.xlsx', index=False)
-print(f"Results saved to files/{file_name}.xlsx")
+# Save to Excel - combined tables (option=1)
+output_path_combined = f'files/{file_name}_page_combined.xlsx'
+logging.info(f"Writing combined table results to '{output_path_combined}'.")
+write_output_final(output_final, excel_path=output_path_combined, option=1)
+logging.info(f"Results saved to {output_path_combined}")
+
+# Save to Excel - split tables (option=2)
+output_path_split = f'files/{file_name}_page_split.xlsx'
+logging.info(f"Writing split tables to '{output_path_split}'.")
+write_output_final(output_final, excel_path=output_path_split, option=2)
+logging.info(f"Results saved to {output_path_split}")
+
+# Save to Excel - one sheet with gaps (option=3)
+output_path_one_sheet = f'files/{file_name}_one_sheet_split.xlsx'
+logging.info(f"Writing all tables on one sheet to '{output_path_one_sheet}'.")
+write_output_final(output_final, excel_path=output_path_one_sheet, option=3)
+logging.info(f"Results saved to {output_path_one_sheet}")
+
+logging.info("All tasks completed successfully. Exiting main.")
 
 
-# num_tables, table_headers, confidence_score_0 = asyncio.run(get_validated_table_info(text_input=extracted_text, open_api_key=open_api_key, base64_image= base64_image))
-
-
-
-
-# results, issue_table_headers_parse_column_data, confidence_score_1 =  asyncio.run(parse_column_data(user_text=user_text,
-#                                         text_input= extracted_text,
-#                                         tables_to_target= sorted(table_headers),
-#                                         base64_image=base64_image,
-#                                         open_api_key=open_api_key))
 
 
 
 
 
-# df_final = process_tables_to_df(results, user_text, extracted_text, base64_image, open_api_key)
+
+# from modules.pdf_extraction import extract_text_from_pages, select_pdf_file
+# from modules.pdf_extraction import write_output_final
+# from modules.pdf_extraction import parse_column_data
+# from modules.pdf_extraction import get_validated_table_info
+# from modules.pdf_extraction import get_page_pixel_data
+# from modules.pdf_extraction import process_tables_to_df
+# from dotenv import load_dotenv
+# from openai import OpenAI
+# import pandas as pd
+# import asyncio
+# import os
+# import pymupdf
+# import time
+
+# # to do.. table names headers can be dupilcated may be helpful to use say table 1,2, etc to deitigusih tem. 
+# # use pdf plumber  page.find_tables() and gpt table count for confidence calculation. 
+# # the same table can be extraected twice or more if the header is not clear
+# # extract header witout the text 
+
+# file_name = 'split_test_1'    
+# user_text='Extract all data from the table(s) the header'
+
+# # 1. Load Credientials
+
+# # Load environment variables from the .env file
+# load_dotenv()
+# # Get the API key from the environment variable
+# open_api_key = os.getenv('OPENAI_API_KEY')
+# # Initialize OpenAI client
+# openai_client = OpenAI(api_key = open_api_key)
+
+
+
+# # 2. Select PDF file and extract text
+# pdf_path = select_pdf_file()
+# doc = pymupdf.open(pdf_path)
+# total_pages = doc.page_count  # total number of pages in the document
+# page_indices = range(total_pages)
+
+# # page_indices can be a list of page numbers to process
+
+
+# # Start timing
+# start_time = time.time()
+
+# async def process_page():
+#     tasks = []
+#     results_output = []
+#     # Create all tasks first 
+#     async with asyncio.TaskGroup() as tg:
+#         for page_no in page_indices:
+#             page = doc.load_page(page_no)
+#             extracted_text = page.get_text()
+            
+#             # extracted_text = extract_text_from_pages(pdf_path, pages=page_no)
+#             base64_image = get_page_pixel_data(pdf_path=pdf_path, page_no=page_no, 
+#                                 dpi = 500, image_type = 'png')
+        
+#             num_tables, table_headers, table_location, confidence_score_0 = await get_validated_table_info(
+#                 text_input=extracted_text, 
+#                 open_api_key=open_api_key, 
+#                 base64_image=base64_image
+#             )
+
+#             if num_tables == 0:
+#                 print(f"No tables found on page {page_no + 1}, skipping...")
+#                 continue
+    
+#             tasks.append(tg.create_task(process_tables_to_df(
+#                 table_headers, 
+#                 table_location,
+#                 user_text, 
+#                 extracted_text, 
+#                 base64_image, 
+#                 open_api_key,
+#                 page_no)))
+            
+#         # Await all tasks to complete
+#         for task in tasks:
+#             results_output.append(await task)
+    
+#     if not results_output:
+#         raise ValueError("No tables found on any of the processed pages")
+            
+#     return results_output
+ 
+
+# output_final = asyncio.run(process_page())
+
+# # Calculate elapsed time
+# end_time = time.time()
+# elapsed_time = end_time - start_time
+# print(f"Processing took {elapsed_time:.2f} seconds")
+
+# # Save to Excel - combined tables
+# write_output_final(output_final, excel_path=f'files/{file_name}_page_combined.xlsx', option=1)
+# print(f"Results saved to files/{file_name}_page_combined.xlsx")
+
+# # Save to Excel - split tables
+# write_output_final(output_final, excel_path=f'files/{file_name}_page_split.xlsx', option=2)
+# print(f"Results saved to files/{file_name}_page_split.xlsx")
+
+# # Save to Excel - split tables
+# write_output_final(output_final, excel_path=f'files/{file_name}_one_sheet_split.xlsx', option=3)
+# print(f"Results saved to files/{file_name}one_sheet_split.xlsx")
+
+
+
+
