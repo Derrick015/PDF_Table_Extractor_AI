@@ -82,18 +82,20 @@ def generate_excel_files(output_final, file_name="output"):
     return excel_files
 
 def main():
-    st.title("Single Slider: Page Range and Dual Preview")
+    st.title("PDF Table Extraction with Dual Preview")
 
-    # 1) Upload PDF
-    uploaded_file = st.file_uploader("Choose a PDF file", type="pdf")
+    # Persist the uploaded file in session state using a key
+    uploaded_file = st.file_uploader("Choose a PDF file", type="pdf", key="uploaded_file")
     user_text = st.text_input("Enter extraction prompt", "Extract all data from the table(s) the header")
 
     if uploaded_file is not None:
-        # Save uploaded file to a temporary path
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-            tmp_file.write(uploaded_file.read())
-            tmp_file_path = tmp_file.name
+        # Save the uploaded file to a temporary path and store it in session_state
+        if "tmp_file_path" not in st.session_state:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+                tmp_file.write(uploaded_file.read())
+                st.session_state["tmp_file_path"] = tmp_file.name
 
+        tmp_file_path = st.session_state["tmp_file_path"]
         st.write(f"Uploaded file saved to temporary path: {tmp_file_path}")
 
         # Open the PDF
@@ -106,7 +108,7 @@ def main():
         total_pages = doc.page_count
         st.write(f"Total pages in document: {total_pages}")
 
-        # 2) Single Slider for start and end page
+        # Single slider for selecting page range (1-indexed)
         st.subheader("Select page range (1-indexed)")
         page_range = st.slider(
             "Drag to pick the start/end pages",
@@ -117,27 +119,26 @@ def main():
         start_page, end_page = page_range  # 1-indexed
         selected_pages = range(start_page - 1, end_page)  # convert to 0-indexed
 
-        # 3) Preview both the first and last pages of the range (if distinct)
+        # Preview both the first and last pages of the selected range
         st.subheader("Preview of Selected Range")
         col1, col2 = st.columns(2)
         preview_dpi = 300
 
-        # Preview Start Page
+        # Generate preview for the start page
         start_page_base64 = get_page_pixel_data(
             pdf_path=tmp_file_path,
-            page_no=(start_page - 1),  # 0-index
+            page_no=(start_page - 1),  # 0-indexed
             dpi=preview_dpi,
             image_type='png'
         )
-
         with col1:
             st.image("data:image/png;base64," + start_page_base64, caption=f"Start Page: {start_page}")
 
-        # If the range has more than one page, also preview the last page
+        # If more than one page is selected, generate preview for the end page
         if end_page > start_page:
             end_page_base64 = get_page_pixel_data(
                 pdf_path=tmp_file_path,
-                page_no=(end_page - 1),  # 0-index
+                page_no=(end_page - 1),  # 0-indexed
                 dpi=preview_dpi,
                 image_type='png'
             )
@@ -146,13 +147,13 @@ def main():
         else:
             col2.write("Only one page selected, no second preview.")
 
-        # Make sure we have an OpenAI API key
+        # Check for OpenAI API key
         open_api_key = os.getenv("OPENAI_API_KEY")
         if not open_api_key:
             st.error("OPENAI_API_KEY not found in .env or environment variables.")
             return
 
-        # 4) Button to start processing
+        # Button to start processing
         if st.button("Process PDF"):
             if "output_final" not in st.session_state:
                 progress_bar = st.progress(0)
@@ -162,7 +163,6 @@ def main():
                     progress_bar.progress(completed / total)
                     status_text.text(f"Processed {completed} of {total} pages.")
 
-                # Process asynchronously
                 with st.spinner("Processing PDF..."):
                     st.session_state["output_final"] = asyncio.run(
                         process_all_pages(
@@ -176,33 +176,18 @@ def main():
                     )
                 st.success("PDF processing complete.")
 
-            # Display the extracted tables
             if st.session_state.get("output_final"):
                 st.write("Extracted Tables:")
                 for page_data in st.session_state["output_final"]:
                     for df in page_data:
                         st.dataframe(df)
 
-            # Generate Excel files if not already done
             if "excel_files" not in st.session_state:
                 with st.spinner("Generating Excel files..."):
                     st.session_state["excel_files"] = generate_excel_files(st.session_state["output_final"])
                 st.success("Excel files generated.")
 
-            # Set a flag so the download buttons always show after processing
-            st.session_state["processed"] = True
-
-            # Close the PDF document to release the file lock
-            doc.close()
-
-            # Remove the temporary file
-            try:
-                os.remove(tmp_file_path)
-            except Exception as e:
-                st.error(f"Error removing temporary file: {e}")
-
-        # Outside the button block, always display the download buttons if processing is done
-        if st.session_state.get("processed"):
+            # Provide three download buttons for the different Excel outputs
             colA, colB, colC = st.columns(3)
             with colA:
                 st.download_button(
@@ -220,11 +205,16 @@ def main():
                 )
             with colC:
                 st.download_button(
-                    label="One Sheet (Option 3)",
+                    label="Download One Sheet (Option 3)",
                     data=st.session_state["excel_files"]["one_sheet"],
                     file_name="output_one_sheet.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
+
+            # Comment out the removal of the temporary file so that the generated outputs persist.
+            # os.remove(tmp_file_path)
+    else:
+        st.info("Please upload a PDF file to begin.")
 
 if __name__ == "__main__":
     main()

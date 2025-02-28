@@ -474,7 +474,7 @@ async def process_tables_to_df(
                             model='gpt-4o'
                         )
                     ))
-            gpt4o_results = [await t for t in tasks]
+            gpt4o_results = [task.result() for task in tasks]
             results_output = gpt4o_results
             logging.info("Successfully retrieved data using model 'gpt-4o'.")
             break
@@ -508,7 +508,7 @@ async def process_tables_to_df(
                                 model='o1'
                             )
                         ))
-                o1_results = [await t for t in tasks]
+                o1_results = [task.result() for task in tasks]
                 results_output = o1_results
                 logging.info("Successfully retrieved data using model 'o1'.")
                 break
@@ -528,26 +528,35 @@ async def process_tables_to_df(
     df_list = []
     for i, out in enumerate(results_output):
         try:
+
             df = extract_df_from_string(out)
             logging.debug(f"Parsed DataFrame for table index {i} with shape {df.shape}")
+
+
+            # Normalize columns
+            df.columns = df.columns.astype(str).str.strip().str.strip('"\'').str.title()
+            if table_location[i] == 'Table is present in both the image and the text document':
+                df[df.columns] = df[df.columns].map(
+                    lambda val: val if str(val) in extracted_text else "N/A"
+                )
+                df['table_header_descriptor'] = table_headers[i]
+            else:
+                df['table_header_descriptor'] = table_headers[i]
+                df['page_number'] = page_number + 1
+
+            df_list.append(df)
+        
         except:
-            logging.warning(f"Could not extract table with index {i}, skipping.")
+            logging.warning(f"Could not extract table with index {i} on page {page_number + 1} , skipping.")
             continue
 
-        # Normalize columns
-        df.columns = df.columns.astype(str).str.strip().str.strip('"\'').str.title()
-        if table_location[i] == 'Table is present in both the image and the text document':
-            df[df.columns] = df[df.columns].map(
-                lambda val: val if str(val) in extracted_text else "N/A"
-            )
-            df['table_header_descriptor'] = table_headers[i]
-        else:
-            df['table_header_descriptor'] = table_headers[i]
-            df['page_number'] = page_number + 1
-
-        df_list.append(df)
-
     logging.info(f"Completed processing tables to DataFrame for page {page_number + 1}.")
+    
+    # Handle case where all tables failed extraction
+    if not df_list:
+        logging.error(f"No tables could be extracted from the results. - Page {page_number + 1} - table ({i+1})")
+        df_list.append(pd.DataFrame()) # apend empty df
+
     return df_list
 
 def write_output_final(output_final, excel_path, option=1, gap_rows=2):

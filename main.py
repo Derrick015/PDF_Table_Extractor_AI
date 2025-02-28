@@ -68,54 +68,58 @@ async def process_page():
     logging.info("Starting asynchronous page processing.")
     tasks = []
     results_output = []
+    try:
+        async with asyncio.TaskGroup() as tg:
+            for page_no in page_indices:
+                logging.debug(f"Loading page {page_no + 1}.")
+                page = doc.load_page(page_no)
+                extracted_text = page.get_text()
 
-    async with asyncio.TaskGroup() as tg:
-        for page_no in page_indices:
-            logging.debug(f"Loading page {page_no + 1}.")
-            page = doc.load_page(page_no)
-            extracted_text = page.get_text()
-
-            logging.debug(f"Converting page {page_no + 1} to base64 image.")
-            base64_image = get_page_pixel_data(
-                pdf_path=pdf_path,
-                page_no=page_no,
-                dpi=500,
-                image_type='png'
-            )
-        
-            logging.debug("Validating table information via LLM.")
-            num_tables, table_headers, table_location, confidence_score_0 = await get_validated_table_info(
-                text_input=extracted_text,
-                open_api_key=open_api_key,
-                base64_image=base64_image
-            )
-
-            if num_tables == 0:
-                logging.info(f"No tables found on page {page_no + 1}, skipping...")
-                continue
-
-            logging.info(f"Found {num_tables} table(s) on page {page_no + 1}. Headers: {table_headers}")
-    
-            tasks.append(tg.create_task(process_tables_to_df(
-                table_headers,
-                table_location,
-                user_text,
-                extracted_text,
-                base64_image,
-                open_api_key,
-                page_no
-            )))
-        
-        # Await all tasks to complete
-        logging.debug("Awaiting all table-processing tasks to finish.")
-        for task in tasks:
-            results_output.append(await task)
-    
-    if not results_output:
-        logging.error("No tables found on any of the processed pages.")
-        raise ValueError("No tables found on any of the processed pages")
+                logging.debug(f"Converting page {page_no + 1} to base64 image.")
+                base64_image = get_page_pixel_data(
+                    pdf_path=pdf_path,
+                    page_no=page_no,
+                    dpi=500,
+                    image_type='png'
+                )
             
-    return results_output
+                logging.debug("Validating table information via LLM.")
+                num_tables, table_headers, table_location, confidence_score_0 = await get_validated_table_info(
+                    text_input=extracted_text,
+                    open_api_key=open_api_key,
+                    base64_image=base64_image
+                )
+
+                if num_tables == 0:
+                    logging.info(f"No tables found on page {page_no + 1}, skipping...")
+                    continue
+
+                logging.info(f"Found {num_tables} table(s) on page {page_no + 1}. Headers: {table_headers}")
+        
+                tasks.append(tg.create_task(process_tables_to_df(
+                    table_headers,
+                    table_location,
+                    user_text,
+                    extracted_text,
+                    base64_image,
+                    open_api_key,
+                    page_no
+                )))
+            
+            # Await all tasks to complete
+            logging.debug("Awaiting all table-processing tasks to finish.")
+            for task in tasks:
+                results_output.append(await task)
+        
+        if not results_output:
+            logging.error("No tables found on any of the processed pages.")
+            raise ValueError("No tables found on any of the processed pages")
+            
+        return results_output
+
+    except Exception as e:
+        logging.error("An issue occured. Kindly try again.")
+        print(f"Error occurred during API call: {e}")
 
 logging.info("Running the asynchronous process to parse PDF pages.")
 output_final = asyncio.run(process_page())
