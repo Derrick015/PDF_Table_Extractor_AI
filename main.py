@@ -33,7 +33,7 @@ logging.basicConfig(
 # extract header witout the text 
 
 file_name = 'split_test_1'    
-user_text = 'Extract all data from the table(s) the header'
+user_text = 'Extract all data from the table(s)'
 
 # 1. Load Credentials
 logging.info("Loading environment variables from .env file.")

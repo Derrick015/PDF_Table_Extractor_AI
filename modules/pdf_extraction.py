@@ -554,7 +554,7 @@ async def process_tables_to_df(
     
     # Handle case where all tables failed extraction
     if not df_list:
-        logging.error(f"No tables could be extracted from the results. - Page {page_number + 1} - table ({i+1})")
+        logging.error(f"No tables could be extracted from the results. - Page {page_number + 1}")
         df_list.append(pd.DataFrame()) # apend empty df
 
     return df_list
