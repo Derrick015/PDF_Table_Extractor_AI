@@ -19,7 +19,7 @@ PDF Table Extractor AI is designed to solve the challenging problem of extractin
 
 ### Prerequisites
 
-- Python 3.8 or higher
+- Python 3.11 or higher
 - OpenAI API key (with access to GPT-4o or compatible models)
 
 ### Setup
