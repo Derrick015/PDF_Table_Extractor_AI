@@ -26,7 +26,7 @@ PDF Table Extractor AI is designed to solve the challenging problem of extractin
 
 1. Clone the repository:
    ```
-   git clone https://github.com/yourusername/PDF_Table_Extractor_AI.git
+   git clone https://github.com/Derrick015/PDF_Table_Extractor_AI.git
    cd PDF_Table_Extractor_AI
    ```
 
