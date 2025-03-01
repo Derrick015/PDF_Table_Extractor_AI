@@ -30,6 +30,14 @@ st.set_page_config(
     layout="wide"
 )
 
+# Initialize session state variables if they don't exist
+if 'processing_complete' not in st.session_state:
+    st.session_state.processing_complete = False
+if 'output_final' not in st.session_state:
+    st.session_state.output_final = []
+if 'file_name' not in st.session_state:
+    st.session_state.file_name = "output_file"
+
 # Load environment variables
 load_dotenv()
 open_api_key = os.getenv('OPENAI_API_KEY')
@@ -53,7 +61,8 @@ with st.sidebar:
         os.makedirs("files")
         
     # Output file name
-    file_name = st.text_input("File name", value="output_file")
+    file_name = st.text_input("File name", value=st.session_state.file_name)
+    st.session_state.file_name = file_name
     
     # Use text_area instead of text_input for more space
     user_text = st.text_area(
@@ -65,6 +74,7 @@ with st.sidebar:
     # Validate inputs - ensure defaults if empty
     if not file_name.strip():
         file_name = "output_file"
+        st.session_state.file_name = file_name
         st.warning("Using default filename 'output_file' as none was provided.")
     
     if not user_text.strip():
@@ -166,9 +176,14 @@ if uploaded_file:
         
         # Show the process button only if page_indices is not empty
         if page_indices:
+            # Only show the process button if we haven't completed processing or if we're reprocessing
             process_button = st.button("Process Selected Pages")
             
             if process_button:
+                # Reset the processing state
+                st.session_state.processing_complete = False
+                st.session_state.output_final = []
+                
                 # Show progress
                 progress_bar = st.progress(0)
                 status_text = st.empty()
@@ -233,11 +248,18 @@ if uploaded_file:
                 start_time = time.time()
                 with st.spinner("Processing PDF tables..."):
                     output_final = asyncio.run(process_pages())
+                    # Store the output in session state
+                    st.session_state.output_final = output_final
+                    st.session_state.processing_complete = True
                 
                 # Calculate elapsed time
                 end_time = time.time()
                 elapsed_time = end_time - start_time
                 st.success(f"Processing completed in {elapsed_time:.2f} seconds")
+            
+            # Check if processing has been completed (either in this run or a previous one)
+            if st.session_state.processing_complete:
+                output_final = st.session_state.output_final
                 
                 # Only show download options if we have results
                 if output_final and len(output_final) > 0:
@@ -245,6 +267,10 @@ if uploaded_file:
                     
                     # Create columns for download buttons
                     col1, col2, col3, col4 = st.columns(4)
+                    
+                    # Make sure the files directory exists
+                    if not os.path.exists("files"):
+                        os.makedirs("files")
                     
                     # Save results and provide download buttons
                     with col1:
@@ -258,7 +284,7 @@ if uploaded_file:
                                 file_name=f"{file_name}_combined.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                             )
-                        st.caption("All tables combined into a single sheet")
+                        st.caption("All tables combined on a single sheet with no gaps.")
                     
                     with col2:
                         split_file = f'files/{file_name}_split.xlsx'
@@ -271,7 +297,7 @@ if uploaded_file:
                                 file_name=f"{file_name}_split.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                             )
-                        st.caption("Each table in a separate sheet")
+                        st.caption("Each table on a separate sheet")
                     
                     with col3:
                         one_sheet_file = f'files/{file_name}_one_sheet_split.xlsx'
@@ -279,7 +305,7 @@ if uploaded_file:
                         
                         with open(one_sheet_file, "rb") as file:
                             st.download_button(
-                                label="Download One Sheet with Gaps",
+                                label="Download Split Tables a Sheet",
                                 data=file,
                                 file_name=f"{file_name}_one_sheet_split.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -332,4 +358,4 @@ if uploaded_file:
 
 # Footer
 st.markdown("---")
-st.markdown("<p style='font-size: 12px;'>AI can make mistakes, please review the output before using it for any purpose.</p>", unsafe_allow_html=True)
+st.markdown("<p style='font-size: 12px;'>AIs can make mistakes, please review the output before using it for any purpose.</p>", unsafe_allow_html=True)
