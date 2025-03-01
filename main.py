@@ -61,7 +61,7 @@ total_pages = doc.page_count
 page_indices = range(total_pages)
 logging.info(f"Total pages in the document: {total_pages}")
 
-asyncio.Task
+
 
 # Start timing
 start_time = time.time()
