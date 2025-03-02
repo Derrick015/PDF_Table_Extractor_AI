@@ -85,7 +85,8 @@ The application will be available at http://localhost:8501 in your web browser.
 
 - Performance depends on the quality and complexity of the PDF
 - Processing large documents may take time and consume API credits
-- Very complex or highly stylized tables may require manual verification
+- Very complex or highly stylised tables may require manual verification
+- Does not currenlty work with tables in images
 - 200 MB max file size
 
 ## License

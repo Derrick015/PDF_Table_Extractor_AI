@@ -35,10 +35,6 @@ logging.basicConfig(
 # Log the start of the script
 logging.info("Starting PDF Table Extractor main script")
 
-# to do.. table names headers can be dupilcated may be helpful to use say table 1,2, etc to deitigusih tem. 
-# use pdf plumber  page.find_tables() and gpt table count for confidence calculation. 
-# the same table can be extraected twice or more if the header is not clear
-# extract header witout the text 
 
 file_name = 'split_test_1'    
 user_text = 'Extract all data from the table(s)'
@@ -84,6 +80,15 @@ async def process_page():
                 logging.debug(f"Loading page {page_no + 1}.")
                 page = doc.load_page(page_no)
                 extracted_text = page.get_text()
+                
+
+                tabs = page.find_tables()
+                num_tables_0 = len(tabs.tables)
+                
+                # Check for the presence of tables with pymupdf. This will mean images with tables will be ignored. 
+                if num_tables_0 == 0:
+                    print(f"No tables found on page from pymupdf {page_no + 1}, skipping...")
+                    continue
 
                 logging.debug(f"Converting page {page_no + 1} to base64 image.")
                 base64_image = get_page_pixel_data(
@@ -96,12 +101,13 @@ async def process_page():
                 logging.debug("Validating table information via LLM.")
                 num_tables, table_headers, confidence_score_0 = await get_validated_table_info(
                     text_input=extracted_text,
+                    user_text=user_text,
                     open_api_key=open_api_key,
                     base64_image=base64_image
                 )
 
                 if num_tables == 0:
-                    logging.info(f"No tables found on page {page_no + 1}, skipping...")
+                    logging.info(f"No tables found on page by LLM {page_no + 1}, skipping...")
                     continue
 
                 logging.info(f"Found {num_tables} table(s) on page {page_no + 1}. Headers: {table_headers}")

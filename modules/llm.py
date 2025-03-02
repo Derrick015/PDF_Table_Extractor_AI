@@ -209,7 +209,7 @@ def llm_parser(user_text, target_table, target_variables, pattern, text_document
   return completion
 
 
-async def table_identification_llm(text_input, base64_image, open_api_key, model='gpt-4o'):
+async def table_identification_llm(text_input, user_text, base64_image, open_api_key, model='gpt-4o'):
     try:
         # Prepare request headers and payload
         headers = {
@@ -230,14 +230,14 @@ async def table_identification_llm(text_input, base64_image, open_api_key, model
           Your expertise lies in extracting structured information from PDF and identifying tables
 
           You will be provided with:
-
+          * A user's request
           * Extracted text from a PDF page.
           * An image of the same page for reference.
  
           Your task is to:
-          1. Determine and return the total number of tables present on the page.
+          1. Determine and return the total number of tables present on the page in line with the user's request.
 
-          2. Identify and return all tables present on the page. You can use the table header for each table for this. If a table lacks explicit headers, provide a descriptive label for the table based on near by or other content that distinguishes it. Additionally kindly add it the position of the table on the page . Note: Seperate each table header or descriptor with " || " as a delimiter.
+          2. Identify and return all tables present on the page in line with the user's request. You can use the table header for each table for this. If a table lacks explicit headers, provide a descriptive label for the table based on near by or other content that distinguishes it. Additionally kindly add it the position of the table on the page . Note: Seperate each table header or descriptor with " || " as a delimiter.
           
           Expected Output Format:
 
@@ -247,9 +247,16 @@ async def table_identification_llm(text_input, base64_image, open_api_key, model
 
           Note: If there are no tables on the page simply return "0" for the  Number of Tables on the Page and "no tables" for the Table Headers 
 
-          Extracted text:
+        ``````````````````````          
+          User's request:    {user_text}
+        ``````````````````````
 
-          {text_input}
+        ``````````````````````
+          Extracted text:   {text_input}
+        ``````````````````````
+
+
+
                             """
                         },
                         {

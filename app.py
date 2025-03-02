@@ -49,6 +49,8 @@ if 'output_final' not in st.session_state:
     st.session_state.output_final = []
 if 'file_name' not in st.session_state:
     st.session_state.file_name = "output_file"
+if 'custom_pages_last' not in st.session_state:
+    st.session_state.custom_pages_last = ""
 
 # Load environment variables
 load_dotenv()
@@ -151,8 +153,13 @@ if uploaded_file:
             
         else:  # Custom pages
             custom_pages = st.text_input("Enter page numbers separated by commas (e.g., 1,3,5,8)")
-            if custom_pages:
+            preview_button = st.button("Preview Pages")
+            
+            if custom_pages and (preview_button or 'custom_pages_last' in st.session_state and st.session_state.custom_pages_last == custom_pages):
                 try:
+                    # Store current custom pages value in session state to maintain preview between interactions
+                    st.session_state.custom_pages_last = custom_pages
+                    
                     page_nums = [int(p.strip()) for p in custom_pages.split(",")]
                     # Validate page numbers
                     valid_pages = [p for p in page_nums if 1 <= p <= total_pages]
@@ -183,8 +190,15 @@ if uploaded_file:
                     st.error("Please enter valid page numbers separated by commas")
                     page_indices = []
             else:
+                # Initialize session state if first time
+                if 'custom_pages_last' not in st.session_state:
+                    st.session_state.custom_pages_last = ""
+                    
                 page_indices = []
-                st.warning("Please specify at least one page number")
+                if not custom_pages:
+                    st.warning("Please specify at least one page number")
+                elif not preview_button:
+                    st.info("Click 'Preview Pages' to see the selected pages")
         
         # Show the process button only if page_indices is not empty
         if page_indices:
@@ -213,6 +227,15 @@ if uploaded_file:
                                 progress_bar.progress((i / len(page_indices)) * 0.5)  # Update to 50% through the process
                                 
                                 page = doc.load_page(page_no)
+                                
+                                tabs = page.find_tables()
+                                num_tables_0 = len(tabs.tables)
+                                
+                                # Check for the presence of tables with pymupdf. This will mean images with tables will be ignored. 
+                                if num_tables_0 == 0:
+                                    st.info(f"No tables found on page {page_no + 1}")
+                                    continue
+                                
                                 extracted_text = page.get_text()
                                 
                                 base64_image = get_page_pixel_data(
@@ -224,15 +247,16 @@ if uploaded_file:
                                 
                                 num_tables, table_headers, confidence_score = await get_validated_table_info(
                                     text_input=extracted_text,
+                                    user_text=user_text,
                                     open_api_key=open_api_key,
                                     base64_image=base64_image
                                 )
                                 
+                                # Check for the presence of tables with LLM. 
                                 if num_tables == 0:
                                     st.info(f"No tables found on page {page_no + 1}")
                                     continue
                                 
-                                # st.success(f"Found {num_tables} table(s) on page {page_no + 1}. Headers: {table_headers}")
                                 
                                 tasks.append(tg.create_task(process_tables_to_df(
                                     table_headers,
@@ -286,40 +310,40 @@ if uploaded_file:
                     
                     # Save results and provide download buttons
                     with col1:
-                        combined_file = f'files/{file_name}_combined.xlsx'
+                        combined_file = f'files/{file_name}_concatenated.xlsx'
                         write_output_final(output_final, excel_path=combined_file, option=1)
                         
                         with open(combined_file, "rb") as file:
                             st.download_button(
                                 label="Download Format 1",
                                 data=file,
-                                file_name=f"{file_name}_combined.xlsx",
+                                file_name=f"{file_name}_concatenated.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                             )
                         st.caption("All tables concatenated on a single sheet.")
                     
                     with col2:
-                        split_file = f'files/{file_name}_split.xlsx'
+                        split_file = f'files/{file_name}_page_per_sheet.xlsx'
                         write_output_final(output_final, excel_path=split_file, option=2)
                         
                         with open(split_file, "rb") as file:
                             st.download_button(
                                 label="Download Format 2",
                                 data=file,
-                                file_name=f"{file_name}_split.xlsx",
+                                file_name=f"{file_name}_page_per_sheet.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                             )
                         st.caption("All tables on a page per sheet")
                     
                     with col3:
-                        one_sheet_file = f'files/{file_name}_one_sheet_split.xlsx'
+                        one_sheet_file = f'files/{file_name}_all_tables_on_one_sheet.xlsx'
                         write_output_final(output_final, excel_path=one_sheet_file, option=3)
                         
                         with open(one_sheet_file, "rb") as file:
                             st.download_button(
                                 label="Download Format 3",
                                 data=file,
-                                file_name=f"{file_name}_one_sheet_split.xlsx",
+                                file_name=f"{file_name}_all_tables_on_one_sheet.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                             )
                         st.caption("All tables on one sheet")
@@ -330,9 +354,9 @@ if uploaded_file:
                         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
                             # Add each Excel file to the zip
                             for file_path, file_type in [
-                                (combined_file, "combined"),
-                                (split_file, "split"),
-                                (one_sheet_file, "one_sheet_split")
+                                (combined_file, "concatenated"),
+                                (split_file, "page_per_sheet"),
+                                (one_sheet_file, "all_tables_on_one_sheet")
                             ]:
                                 with open(file_path, "rb") as f:
                                     zip_file.writestr(f"{file_name}_{file_type}.xlsx", f.read())
@@ -346,7 +370,7 @@ if uploaded_file:
                             file_name=f"{file_name}_all_formats.zip",
                             mime="application/zip"
                         )
-                        st.caption("All three formats in a single ZIP file")
+                        st.caption("All formats in a single ZIP file")
                     
                 else:
                     st.warning("No tables were found in the selected pages.")

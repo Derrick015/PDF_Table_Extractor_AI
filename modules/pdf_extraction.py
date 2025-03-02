@@ -192,7 +192,7 @@ def compare_table_headers(headers1, headers2):
     logging.debug(f"Headers are the same: {same}")
     return same
 
-async def get_validated_table_info(text_input, open_api_key, base64_image, model='gpt-4o'):
+async def get_validated_table_info(text_input, user_text, open_api_key, base64_image, model='gpt-4o'):
     """
     Attempt to retrieve consistent table information by making multiple calls
     to the table identification LLM. If there's a majority match or exact match
@@ -203,6 +203,7 @@ async def get_validated_table_info(text_input, open_api_key, base64_image, model
     async def asycn_pattern_desc():
         return await table_identification_llm(
             text_input=text_input,
+            user_text=user_text,
             base64_image=base64_image,
             open_api_key=open_api_key,
             model=model
@@ -226,8 +227,6 @@ async def get_validated_table_info(text_input, open_api_key, base64_image, model
 
     if compare_table_headers(headers1, headers2) or (num_tables1 == num_tables2 and num_tables1 is not None):
         logging.info("Initial table info match or same table count. Returning first attempt's result.")
-        logging.info(f"Headers 1: {headers1}")
-        logging.info(f"Headers 2: {headers2}")
         return num_tables1, headers1, 0 # 0 indicates the highest confidence. The higher the number, the lower the confidence. 
 
     # Create third task if needed
@@ -426,6 +425,8 @@ def extract_df_from_string(text):
     logging.error("No tables extracted from the string.")
     raise ValueError("No tables extracted from the page")
 
+
+
 async def process_tables_to_df(
     table_headers, 
     user_text, 
@@ -480,19 +481,25 @@ async def process_tables_to_df(
                 delay *= backoff_factor
 
     # 2) Process the results into DataFrames
-    logging.info(f"Comparing results ouput {len(results_output)} with the table headers {len(table_headers) } for page {page_number + 1}")
+    logging.debug(f"Comparing results ouput {len(results_output)} with the table headers {len(table_headers) } for page {page_number + 1}")
+    logging.debug(f"results_output: {results_output}")
     df_list = []
     for i, out in enumerate(results_output):
         extract_retry_count = 0
+
         max_extract_retries = max_extract_retries_for_extraction_failures  # Maximum number of retries for extraction failures
         
         while extract_retry_count <= max_extract_retries:
             try:
+                # test to see if the LLM is returning the correct data. 
+
                 df = extract_df_from_string(out)
                 logging.debug(f"Parsed DataFrame for table index {i} with shape {df.shape}")
 
                 # Normalize columns
                 df.columns = df.columns.astype(str).str.strip().str.strip('"\'').str.title()
+                
+                # Replace any values that are not in the extracted text with "N/A"  
                 df[df.columns] = df[df.columns].map(
                     lambda val: val if str(val) in extracted_text else "N/A"
                 )
@@ -518,9 +525,10 @@ async def process_tables_to_df(
                             base64_image=base64_image,
                             open_api_key=open_api_key,
                             model=model,
-                            temperature=1
+                            temperature=0.8
                         )
                         results_output[i] = out  # Update the results_output with the new result
+                        logging.debug(f"Regenerated table data for index {i}, table '{table_headers[i]}, output was {out}")
                     except Exception as regen_error:
                         logging.error(f"Failed to regenerate table data: {str(regen_error)}")
                         # Continue to next retry or exit loop if max retries reached
