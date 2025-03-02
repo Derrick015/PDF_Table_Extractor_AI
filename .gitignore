@@ -1,4 +1,4 @@
 .env
 archive/
-logs/
-files/
+logs/*
+files/*
