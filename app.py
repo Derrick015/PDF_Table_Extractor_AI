@@ -21,10 +21,18 @@ from modules.pdf_extraction import (
 if not os.path.exists("logs"):
     os.makedirs("logs")
 
+
+# Configure Logging
+# Debug
+# Info
+# Warning
+# Error
+# Critical
+
 # Configure logging
 log_file = os.path.join("logs", "app.log")
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler(log_file),
@@ -85,6 +93,13 @@ with st.sidebar:
         height=200  # Make the box much taller
     )
     
+    # Add checkbox for table in image detection
+    table_in_image = st.checkbox("Detect tables in images", value=False, 
+                                help="Enable this if your PDF contains tables within images")
+    
+    add_in_table_and_page_information = st.checkbox("Add table and page information", value=False, 
+                                help="Enable this if you want to add table name, position and page number to the table")
+    
     # Validate inputs - ensure defaults if empty
     if not file_name.strip():
         file_name = "output_file"
@@ -123,10 +138,28 @@ if uploaded_file:
             
         elif range_option == "Specific range":
             col1, col2 = st.columns(2)
+            
+            # Initialize end_page in session state if it doesn't exist
+            if 'end_page' not in st.session_state:
+                st.session_state.end_page = min(5, total_pages)  # Default to page 5 or max
+                
             with col1:
-                start_page = st.number_input("Start page", min_value=1, max_value=total_pages, value=1)
+                start_page = st.number_input("Start page", min_value=1, max_value=total_pages, value=1, key="start_page")
+            
+            # Update end_page min_value without changing its current value
             with col2:
-                end_page = st.number_input("End page", min_value=start_page, max_value=total_pages, value=min(start_page + 4, total_pages))
+                # Initialize or adjust end_page in session state if needed
+                if 'end_page' not in st.session_state:
+                    st.session_state.end_page = min(5, total_pages)  # Default to page 5 or max
+                elif st.session_state.end_page < start_page:
+                    st.session_state.end_page = start_page
+                
+                end_page = st.number_input(
+                    "End page", 
+                    min_value=start_page, 
+                    max_value=total_pages, 
+                    key="end_page"
+                )
             
             page_indices = list(range(start_page - 1, end_page))
             st.info(f"Processing pages {start_page} to {end_page} (total: {len(page_indices)} pages)")
@@ -228,14 +261,15 @@ if uploaded_file:
                                 
                                 page = doc.load_page(page_no)
                                 
-                                tabs = page.find_tables()
-                                num_tables_0 = len(tabs.tables)
-                                
+                                if not table_in_image:
                                 # Check for the presence of tables with pymupdf. This will mean images with tables will be ignored. 
-                                if num_tables_0 == 0:
-                                    st.info(f"No tables found on page {page_no + 1}")
-                                    continue
-                                
+                                    tabs = page.find_tables()
+                                    num_tables_0 = len(tabs.tables)
+                                    
+                                    if num_tables_0 == 0:
+                                        st.info(f"No tables found on page {page_no + 1}")
+                                        continue
+                                    
                                 extracted_text = page.get_text()
                                 
                                 base64_image = get_page_pixel_data(
@@ -252,6 +286,10 @@ if uploaded_file:
                                     base64_image=base64_image
                                 )
                                 
+                                logging.debug(f"num_tables: {num_tables}")
+                                logging.debug(f"table_headers: {table_headers}")
+
+
                                 # Check for the presence of tables with LLM. 
                                 if num_tables == 0:
                                     st.info(f"No tables found on page {page_no + 1}")
@@ -264,7 +302,9 @@ if uploaded_file:
                                     extracted_text,
                                     base64_image,
                                     open_api_key,
-                                    page_no
+                                    page_no,
+                                    table_in_image,
+                                    add_in_table_and_page_information
                                 )))
                             
                             # Await all tasks to complete

@@ -224,6 +224,10 @@ async def get_validated_table_info(text_input, user_text, open_api_key, base64_i
     num_tables1, headers1 = extract_table_info(output1)
     num_tables2, headers2 = extract_table_info(output2)
 
+    logging.debug(f"headers1: {headers1}")
+    logging.debug(f"headers2: {headers2}")
+    logging.debug(f"num_tables1: {num_tables1}")
+    logging.debug(f"num_tables2: {num_tables2}")
 
     if compare_table_headers(headers1, headers2) or (num_tables1 == num_tables2 and num_tables1 is not None):
         logging.info("Initial table info match or same table count. Returning first attempt's result.")
@@ -236,6 +240,9 @@ async def get_validated_table_info(text_input, user_text, open_api_key, base64_i
     logging.debug(f"LLM attempt 3 output:\n{output3}")
 
     num_tables3, headers3  = extract_table_info(output3)
+
+    logging.debug(f"headers3: {headers3}")
+    logging.debug(f"num_tables3: {num_tables3}")
 
     if compare_table_headers(headers3, headers1) or (num_tables3 == num_tables1 and num_tables3 is not None):
         logging.info("Majority match found with first and third results.")
@@ -426,7 +433,6 @@ def extract_df_from_string(text):
     raise ValueError("No tables extracted from the page")
 
 
-
 async def process_tables_to_df(
     table_headers, 
     user_text, 
@@ -434,6 +440,8 @@ async def process_tables_to_df(
     base64_image, 
     open_api_key, 
     page_number,
+    table_in_image,
+    add_in_table_and_page_information,  
     max_retries=3,
     initial_delay=1,
     backoff_factor=2,
@@ -462,7 +470,7 @@ async def process_tables_to_df(
                             base64_image=base64_image,
                             open_api_key=open_api_key,
                             model= model,
-                            temperature=0.4
+                            temperature=0.7
                         )
                     ))
             results_output = [task.result() for task in tasks]
@@ -499,12 +507,15 @@ async def process_tables_to_df(
                 # Normalize columns
                 df.columns = df.columns.astype(str).str.strip().str.strip('"\'').str.title()
                 
-                # Replace any values that are not in the extracted text with "N/A"  
-                df[df.columns] = df[df.columns].map(
-                    lambda val: val if str(val) in extracted_text else "N/A"
-                )
-                df['table_header_position'] = table_headers[i]
-                df['page_number'] = page_number + 1
+                if not table_in_image:
+                    # Replace any values that are not in the extracted text with "N/A"  
+                    df[df.columns] = df[df.columns].map(
+                        lambda val: val if str(val) in extracted_text else "N/A"
+                    )
+                    
+                if add_in_table_and_page_information:
+                    df['table_header_position'] = table_headers[i]
+                    df['page_number'] = page_number + 1
 
                 df_list.append(df)
                 break  # Successfully extracted, exit the retry loop
@@ -513,7 +524,7 @@ async def process_tables_to_df(
                 extract_retry_count += 1
                 if extract_retry_count <= max_extract_retries:
                     logging.warning(f"Could not extract table with index {i} on page {page_number + 1}. Retry attempt {extract_retry_count}...")
-                    logging.error("Full error traceback:", exc_info=True)
+                    # logging.error("Full error traceback:", exc_info=True)
                     # Regenerate the specific table result using vision_llm_parser. 
                     # Previous llm generation might not have been suitbale for the extraction function. 
                     try:
@@ -525,10 +536,10 @@ async def process_tables_to_df(
                             base64_image=base64_image,
                             open_api_key=open_api_key,
                             model=model,
-                            temperature=0.8
+                            temperature=1
                         )
                         results_output[i] = out  # Update the results_output with the new result
-                        logging.debug(f"Regenerated table data for index {i}, table '{table_headers[i]}, output was {out}")
+                        logging.info(f"Regenerated table data for index {i}, with model 'o1', table '{table_headers[i]}, output was {out}")
                     except Exception as regen_error:
                         logging.error(f"Failed to regenerate table data: {str(regen_error)}")
                         # Continue to next retry or exit loop if max retries reached

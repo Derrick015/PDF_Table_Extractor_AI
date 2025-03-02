@@ -235,9 +235,9 @@ async def table_identification_llm(text_input, user_text, base64_image, open_api
           * An image of the same page for reference.
  
           Your task is to:
-          1. Determine and return the total number of tables present on the page in line with the user's request.
+          1. Determine and return the total number of tables present on the page in line with the user's request. 
 
-          2. Identify and return all tables present on the page in line with the user's request. You can use the table header for each table for this. If a table lacks explicit headers, provide a descriptive label for the table based on near by or other content that distinguishes it. Additionally kindly add it the position of the table on the page . Note: Seperate each table header or descriptor with " || " as a delimiter.
+          2. Identify and return tables present on the page in line with the user's request. You can use the table header for each table for this. If a table lacks explicit headers, provide a descriptive label for the table based on near by or other content that distinguishes it. Additionally kindly add it the position of the table on the page . Note: Seperate each table header or descriptor with " || " as a delimiter.
           
           Expected Output Format:
 
@@ -246,7 +246,8 @@ async def table_identification_llm(text_input, user_text, base64_image, open_api
           2. Table Headers:  [Table headers or table descriptors with their positions on the page delimited by " || " (This has to be one per table). eg: "Screw Machine -1 - Can be found on the bottom left position of the page" || "Screw Machine -2 - Can be found on the bottom right position of the page" || .....]  
 
           Note: If there are no tables on the page simply return "0" for the  Number of Tables on the Page and "no tables" for the Table Headers 
-
+          Note: If the user requests to extract from a specific table, ensure you only return the tables that match the user's request. 
+          
         ``````````````````````          
           User's request:    {user_text}
         ``````````````````````
@@ -474,6 +475,7 @@ async def vision_llm_parser(user_text, text_input, table_to_target, base64_image
 
           ``````````````````````````
           NOTE: Column names may be numerical (eg 0314, 4532, etc), textual or alphanumerical, ensure they are returned exactly as is.
+          NOTE: Ensure the table extracted is as like for like as the table represented in the image.
         
           Now provide the output for the following:
            

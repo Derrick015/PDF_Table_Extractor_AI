@@ -26,9 +26,15 @@ if not os.path.exists("logs"):
     os.makedirs("logs")
 
 # Configure Logging
+# Debug
+# Info
+# Warning
+# Error
+# Critical
+
 log_file = os.path.join("logs", "main.log")
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler(log_file),
@@ -36,12 +42,16 @@ logging.basicConfig(
     ]
 )
 
+
 # Log the start of the script
 logging.info("Starting PDF Table Extractor main script")
 
 
 file_name = 'split_test_1'    
 user_text = 'Extract all data from the table(s)'
+table_in_image = True # may require more review
+add_in_table_and_page_information = True
+
 
 # 1. Load Credentials
 logging.info("Loading environment variables from .env file.")
@@ -86,13 +96,13 @@ async def process_page():
                 extracted_text = page.get_text()
                 
 
-                tabs = page.find_tables()
-                num_tables_0 = len(tabs.tables)
-                
-                # Check for the presence of tables with pymupdf. This will mean images with tables will be ignored. 
-                if num_tables_0 == 0:
-                    print(f"No tables found on page from pymupdf {page_no + 1}, skipping...")
-                    continue
+                if not table_in_image: 
+                    # Check for the presence of tables with pymupdf. Only works for where there are not tables in the image. 
+                    tabs = page.find_tables()
+                    num_tables_0 = len(tabs.tables)
+                    if num_tables_0 == 0:
+                        print(f"No tables found on page from pymupdf {page_no + 1}, skipping...")
+                        continue
 
                 logging.debug(f"Converting page {page_no + 1} to base64 image.")
                 base64_image = get_page_pixel_data(
@@ -122,7 +132,9 @@ async def process_page():
                     extracted_text,
                     base64_image,
                     open_api_key,
-                    page_no
+                    page_no,
+                    table_in_image,
+                    add_in_table_and_page_information
                 )))
             
             # Await all tasks to complete
