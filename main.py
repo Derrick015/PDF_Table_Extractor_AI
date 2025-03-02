@@ -1,4 +1,3 @@
-
 import logging
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -18,14 +17,23 @@ from modules.pdf_extraction import (
     process_tables_to_df
 )
 
-# -------------------------------------------------------------------
+# Create logs directory if it doesn't exist
+if not os.path.exists("logs"):
+    os.makedirs("logs")
+
 # Configure Logging
-# Change the level to DEBUG for more detailed output if needed
-# -------------------------------------------------------------------
+log_file = os.path.join("logs", "main.log")
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file),
+        logging.StreamHandler()  # This will continue to show logs in console
+    ]
 )
+
+# Log the start of the script
+logging.info("Starting PDF Table Extractor main script")
 
 # to do.. table names headers can be dupilcated may be helpful to use say table 1,2, etc to deitigusih tem. 
 # use pdf plumber  page.find_tables() and gpt table count for confidence calculation. 
@@ -86,7 +94,7 @@ async def process_page():
                 )
             
                 logging.debug("Validating table information via LLM.")
-                num_tables, table_headers, table_location, confidence_score_0 = await get_validated_table_info(
+                num_tables, table_headers, confidence_score_0 = await get_validated_table_info(
                     text_input=extracted_text,
                     open_api_key=open_api_key,
                     base64_image=base64_image
@@ -100,7 +108,6 @@ async def process_page():
         
                 tasks.append(tg.create_task(process_tables_to_df(
                     table_headers,
-                    table_location,
                     user_text,
                     extracted_text,
                     base64_image,

@@ -17,11 +17,23 @@ from modules.pdf_extraction import (
     write_output_final
 )
 
+# Create logs directory if it doesn't exist
+if not os.path.exists("logs"):
+    os.makedirs("logs")
+
 # Configure logging
+log_file = os.path.join("logs", "app.log")
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file),
+        logging.StreamHandler()  # This will continue to show logs in console
+    ]
 )
+
+# Log the start of the application
+logging.info("Starting PDF Table Extractor AI application")
 
 # Page configuration
 st.set_page_config(
@@ -54,7 +66,7 @@ st.markdown("Upload a PDF file to extract tables.")
 
 # Sidebar for options
 with st.sidebar:
-    st.header("Settings")
+    # st.header("Settings")
     
     # Create a files directory if it doesn't exist
     if not os.path.exists("files"):
@@ -210,7 +222,7 @@ if uploaded_file:
                                     image_type='png'
                                 )
                                 
-                                num_tables, table_headers, table_location, confidence_score = await get_validated_table_info(
+                                num_tables, table_headers, confidence_score = await get_validated_table_info(
                                     text_input=extracted_text,
                                     open_api_key=open_api_key,
                                     base64_image=base64_image
@@ -224,7 +236,6 @@ if uploaded_file:
                                 
                                 tasks.append(tg.create_task(process_tables_to_df(
                                     table_headers,
-                                    table_location,
                                     user_text,
                                     extracted_text,
                                     base64_image,
@@ -241,7 +252,8 @@ if uploaded_file:
                         return results_output
                         
                     except Exception as e:
-                        st.error(f"An error occurred during processing: {str(e)}")
+                        st.error("An issue occurred during processing. Please try again. If the issue persists, try with a different page range or check your PDF file.")
+                        logging.error(f"Processing error details: {str(e)}")
                         return []
                 
                 # Start processing
@@ -279,12 +291,12 @@ if uploaded_file:
                         
                         with open(combined_file, "rb") as file:
                             st.download_button(
-                                label="Download Combined Tables",
+                                label="Download Format 1",
                                 data=file,
                                 file_name=f"{file_name}_combined.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                             )
-                        st.caption("All tables combined on a single sheet with no gaps.")
+                        st.caption("All tables concatenated on a single sheet.")
                     
                     with col2:
                         split_file = f'files/{file_name}_split.xlsx'
@@ -292,12 +304,12 @@ if uploaded_file:
                         
                         with open(split_file, "rb") as file:
                             st.download_button(
-                                label="Download Split Tables",
+                                label="Download Format 2",
                                 data=file,
                                 file_name=f"{file_name}_split.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                             )
-                        st.caption("Each table on a separate sheet")
+                        st.caption("All tables on a page per sheet")
                     
                     with col3:
                         one_sheet_file = f'files/{file_name}_one_sheet_split.xlsx'
@@ -305,12 +317,12 @@ if uploaded_file:
                         
                         with open(one_sheet_file, "rb") as file:
                             st.download_button(
-                                label="Download Split Tables a Sheet",
+                                label="Download Format 3",
                                 data=file,
                                 file_name=f"{file_name}_one_sheet_split.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                             )
-                        st.caption("All tables on one sheet with gaps between them")
+                        st.caption("All tables on one sheet")
                     
                     with col4:
                         # Create a zip file containing all three Excel files
@@ -340,7 +352,8 @@ if uploaded_file:
                     st.warning("No tables were found in the selected pages.")
     
     except Exception as e:
-        st.error(f"Error processing PDF: {str(e)}")
+        st.error("An issue occurred while processing the PDF. Please try again or try with a different PDF file.")
+        logging.error(f"PDF processing error details: {str(e)}")
     
     finally:
         # Close the document before attempting to delete the file

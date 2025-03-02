@@ -239,17 +239,13 @@ async def table_identification_llm(text_input, base64_image, open_api_key, model
 
           2. Identify and return all tables present on the page. You can use the table header for each table for this. If a table lacks explicit headers, provide a descriptive label for the table based on near by or other content that distinguishes it. Additionally kindly add it the position of the table on the page . Note: Seperate each table header or descriptor with " || " as a delimiter.
           
-          3. Identify the location of each table in the page. This will be in the form of "Table is only present in the image" or "Table is present in both the image and the text document"
-
           Expected Output Format:
 
           1. Number of Tables on the Page: [Total count]  
 
           2. Table Headers:  [Table headers or table descriptors with their positions on the page delimited by " || " (This has to be one per table). eg: "Screw Machine -1 - Can be found on the bottom left position of the page" || "Screw Machine -2 - Can be found on the bottom right position of the page" || .....]  
 
-          3. Table Location for each table: [Table is only present in the image] or [Table is present in both the image and the text document] this should also be delimited by " || "
-
-          Note: If there are no tables on the page simply return 0 for the  Number of Tables on the Page and "no tables" both Table Headers and Table Location.  
+          Note: If there are no tables on the page simply return "0" for the  Number of Tables on the Page and "no tables" for the Table Headers 
 
           Extracted text:
 
@@ -417,7 +413,7 @@ dict_example = """[
 ]"""
 
 
-async def vision_llm_parser(user_text, text_input, table_to_target, base64_image, open_api_key, model='gpt-4o'):
+async def vision_llm_parser(user_text, text_input, table_to_target, base64_image, open_api_key, model='gpt-4o', temperature=0.2):
 
         headers = {
             "Content-Type": "application/json",
@@ -427,7 +423,7 @@ async def vision_llm_parser(user_text, text_input, table_to_target, base64_image
 
         payload = {
             "model": model,
-            # "temperature": 0.2, 
+            "temperature": temperature, 
             # "frequency_penalty": 0.2,
             "messages": [
                 {

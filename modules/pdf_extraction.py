@@ -12,12 +12,6 @@ import asyncio
 from modules.llm import table_identification_llm, vision_column_llm_parser, vision_llm_parser
 import aiohttp
 
-# Configure logging: You can adjust the level to DEBUG for more detailed output.
-logging.basicConfig(
-    level=logging.INFO,  # Change to logging.DEBUG for more granular messages.
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-
 def extract_text_from_pages(pdf_input, pages=None):
     """
     Extracts text from specified pages in a PDF file using PyMuPDF.
@@ -120,7 +114,7 @@ def select_pdf_file():
         logging.info("No PDF file was selected.")
     return pdf_path
 
-def get_page_pixel_data(pdf_path, page_no, dpi=300, image_type='png'):
+def get_page_pixel_data(pdf_path, page_no, dpi=500, image_type='png'):
     """
     Converts a specified PDF page to a base64-encoded image.
 
@@ -160,7 +154,7 @@ def extract_table_info(text):
         text (str): Text containing table pattern description
         
     Returns:
-        tuple: (num_tables, table_headers, table_location)
+        tuple: (num_tables, table_headers)
     """
     logging.debug("Extracting table info from text.")
 
@@ -172,25 +166,18 @@ def extract_table_info(text):
         num_tables = None
         logging.debug("No table count found in text.")
 
-    match_headers = re.search(r'Table Headers:\s*(.*?)\s*\n\s*3\.', text, re.DOTALL)
+    # Modified regex to capture table headers without requiring "3." after
+    match_headers = re.search(r'Table Headers:\s*(.*?)(?:\s*\n\s*3\.|$)', text, re.DOTALL)
     if match_headers:
-        headers_text = match_headers.group(1)
-        table_headers = [h.strip() for h in headers_text.split('||')]
+        headers_text = match_headers.group(1).strip()
+        # Remove any extra quotes and whitespace
+        table_headers = [h.strip().strip('"') for h in headers_text.split('||')]
         logging.debug(f"Extracted table headers: {table_headers}")
     else:
         table_headers = []
         logging.debug("No table headers found.")
 
-    match_location = re.search(r'Table Location for each table:\s*(.*)', text, re.DOTALL)
-    if match_location:
-        table_location = match_location.group(1).strip()
-    else:
-        table_location = ""
-
-    table_location = table_location.split(" || ")
-    logging.debug(f"Extracted table locations: {table_location}")
-
-    return num_tables, table_headers, table_location
+    return num_tables, table_headers
 
 def compare_table_headers(headers1, headers2):
     """
@@ -233,13 +220,15 @@ async def get_validated_table_info(text_input, open_api_key, base64_image, model
     logging.debug(f"LLM attempt 1 output:\n{output1}")
     logging.debug(f"LLM attempt 2 output:\n{output2}")
 
-    num_tables1, headers1, table_location = extract_table_info(output1)
-    num_tables2, headers2, _ = extract_table_info(output2)
+    num_tables1, headers1 = extract_table_info(output1)
+    num_tables2, headers2 = extract_table_info(output2)
 
 
     if compare_table_headers(headers1, headers2) or (num_tables1 == num_tables2 and num_tables1 is not None):
         logging.info("Initial table info match or same table count. Returning first attempt's result.")
-        return num_tables1, headers1, table_location, 0
+        logging.info(f"Headers 1: {headers1}")
+        logging.info(f"Headers 2: {headers2}")
+        return num_tables1, headers1, 0 # 0 indicates the highest confidence. The higher the number, the lower the confidence. 
 
     # Create third task if needed
     async with asyncio.TaskGroup() as tg:
@@ -247,18 +236,18 @@ async def get_validated_table_info(text_input, open_api_key, base64_image, model
     output3 = await task3
     logging.debug(f"LLM attempt 3 output:\n{output3}")
 
-    num_tables3, headers3, _ = extract_table_info(output3)
+    num_tables3, headers3  = extract_table_info(output3)
 
     if compare_table_headers(headers3, headers1) or (num_tables3 == num_tables1 and num_tables3 is not None):
         logging.info("Majority match found with first and third results.")
-        return num_tables1, headers1, table_location, 1
+        return num_tables1, headers1, 1
     
     if compare_table_headers(headers3, headers2) or (num_tables3 == num_tables2 and num_tables3 is not None):
         logging.info("Majority match found with second and third results.")
-        return num_tables2, headers2, table_location, 1
+        return num_tables2, headers2, 1
 
     logging.warning("No matches found. Returning third run results for table_headers.")
-    return num_tables3, headers3, table_location, 2
+    return num_tables3, headers3, 2
 
 def compare_column_data(data1, data2):
     """
@@ -439,7 +428,6 @@ def extract_df_from_string(text):
 
 async def process_tables_to_df(
     table_headers, 
-    table_location, 
     user_text, 
     extracted_text, 
     base64_image, 
@@ -455,7 +443,7 @@ async def process_tables_to_df(
     Process tables by calling an LLM parser with exponential backoff.
     """
     logging.info(f"Processing tables to DataFrame for page {page_number + 1}")
-    results_output = []
+    
 
     # 1) Try first model: 'gpt-4o'
     delay = initial_delay
@@ -472,11 +460,12 @@ async def process_tables_to_df(
                             table_to_target=table,
                             base64_image=base64_image,
                             open_api_key=open_api_key,
-                            model= model
+                            model= model,
+                            temperature=0.4
                         )
                     ))
-            model_results = [task.result() for task in tasks]
-            results_output = model_results
+            results_output = [task.result() for task in tasks]
+
             logging.info(f"Successfully retrieved data using model '{model}'.")
             break
         except Exception as e:
@@ -485,12 +474,13 @@ async def process_tables_to_df(
                 f"Retrying in {delay} second(s)..."
             )
             if attempt == max_retries - 1:
-                logging.warning(f"Max retries with '{model}' exhausted; will try 'o1' next.")
+                logging.warning(f"Max retries with '{model}' exhausted.")
             else:
                 await asyncio.sleep(delay)
                 delay *= backoff_factor
 
     # 2) Process the results into DataFrames
+    logging.info(f"Comparing results ouput {len(results_output)} with the table headers {len(table_headers) } for page {page_number + 1}")
     df_list = []
     for i, out in enumerate(results_output):
         extract_retry_count = 0
@@ -503,14 +493,11 @@ async def process_tables_to_df(
 
                 # Normalize columns
                 df.columns = df.columns.astype(str).str.strip().str.strip('"\'').str.title()
-                if table_location[i] == 'Table is present in both the image and the text document':
-                    df[df.columns] = df[df.columns].map(
-                        lambda val: val if str(val) in extracted_text else "N/A"
-                    )
-                    df['table_header_position'] = table_headers[i]
-                else:
-                    df['table_header_position'] = table_headers[i]
-                    df['page_number'] = page_number + 1
+                df[df.columns] = df[df.columns].map(
+                    lambda val: val if str(val) in extracted_text else "N/A"
+                )
+                df['table_header_position'] = table_headers[i]
+                df['page_number'] = page_number + 1
 
                 df_list.append(df)
                 break  # Successfully extracted, exit the retry loop
@@ -518,9 +505,10 @@ async def process_tables_to_df(
             except Exception as e:
                 extract_retry_count += 1
                 if extract_retry_count <= max_extract_retries:
-                    logging.warning(f"Could not extract table with index {i} on page {page_number + 1}: {str(e)}. Retry attempt {extract_retry_count}...")
-                    
-                    # Regenerate the specific table result using vision_llm_parser
+                    logging.warning(f"Could not extract table with index {i} on page {page_number + 1}. Retry attempt {extract_retry_count}...")
+                    logging.error("Full error traceback:", exc_info=True)
+                    # Regenerate the specific table result using vision_llm_parser. 
+                    # Previous llm generation might not have been suitbale for the extraction function. 
                     try:
                         logging.info(f"Regenerating table data for index {i}, table '{table_headers[i]}'")
                         out = await vision_llm_parser(
@@ -529,7 +517,8 @@ async def process_tables_to_df(
                             table_to_target=table_headers[i],
                             base64_image=base64_image,
                             open_api_key=open_api_key,
-                            model=model
+                            model=model,
+                            temperature=1
                         )
                         results_output[i] = out  # Update the results_output with the new result
                     except Exception as regen_error:
