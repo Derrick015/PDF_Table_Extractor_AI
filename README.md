@@ -12,7 +12,9 @@ PDF Table Extractor AI is designed to solve the challenging problem of extractin
 - **Data Extraction**: Preserves table structure and relationships between data elements
 - **Multiple Page Processing**: Process specific pages, page ranges, or entire documents
 - **Customizable AI Instructions**: Provide specific extraction instructions for tailored results
-- **Multiple Export Formats**: Download extracted tables in various Excel formats
+- **Multiple Export Formats**: Download extracted tables in Excel or CSV formats
+- **Table in Image Detection**: Optional feature to detect and extract tables embedded in images
+- **Table and Page Information**: Option to add table name, position, and page number to extracted data
 - **User-Friendly Interface**: Simple web-based UI built with Streamlit
 
 ## Installation
@@ -58,12 +60,15 @@ The application will be available at http://localhost:8501 in your web browser.
 2. Select pages to process (all pages, specific range, or custom selection)
 3. Review page previews to confirm your selection
 4. Optionally, customize the AI instructions in the sidebar
-5. Click "Process Selected Pages" to start extraction
-6. Download the results in your preferred format:
+5. Enable additional options if needed:
+   - Detect tables in images
+   - Add table and page information to the output
+6. Choose your preferred output format (Excel or CSV)
+7. Click "Process Selected Pages" to start extraction
+8. Download the results in your preferred format:
    - Format 1: All tables concatenated on a single sheet
-   - Format 2: All tables on a page per sheet
+   - Format 2: Tables by page
    - Format 3: All tables on one sheet with spacing
-   - Download All Formats (ZIP): Contains all three Excel formats in a single ZIP file
 
 ## How It Works
 
@@ -71,7 +76,7 @@ The application will be available at http://localhost:8501 in your web browser.
 2. **Structure Recognition**: The system determines table headers, rows, and columns
 3. **Data Extraction**: Content is extracted while preserving the table structure
 4. **Validation**: Multiple AI passes to mitigate hallucination and improve accuracy and consistency. Generated values are also cross checked with values on the PDF text and replaced with N/A if abscent. 
-5. **Export**: Data is formatted into Excel spreadsheets for easy use
+5. **Export**: Data is formatted into Excel or CSV files for easy use
 
 ## Technical Details
 
@@ -86,7 +91,6 @@ The application will be available at http://localhost:8501 in your web browser.
 - Performance depends on the quality and complexity of the PDF
 - Processing large documents may take time and consume API credits
 - Very complex or highly stylised tables may require manual verification
-- Does not currenlty work with tables in images
 - 200 MB max file size
 
 ## License

@@ -9,12 +9,15 @@ from dotenv import load_dotenv
 from openai import OpenAI
 import zipfile
 import io
+import pandas as pd
+import itertools
 
 from modules.pdf_extraction import (
     get_page_pixel_data,
     get_validated_table_info,
     process_tables_to_df,
-    write_output_final
+    write_output_final,
+    write_output_to_csv
 )
 
 # Create logs directory if it doesn't exist
@@ -99,6 +102,11 @@ with st.sidebar:
     
     add_in_table_and_page_information = st.checkbox("Add table and page information", value=False, 
                                 help="Enable this if you want to add table name, position and page number to the table")
+    
+    # Add file format selection in the sidebar
+    st.markdown("---")
+    st.subheader("Output Format")
+    file_format = st.radio("Select file format:", ["Excel (.xlsx)", "CSV (.csv)"])
     
     # Validate inputs - ensure defaults if empty
     if not file_name.strip():
@@ -337,81 +345,159 @@ if uploaded_file:
             if st.session_state.processing_complete:
                 output_final = st.session_state.output_final
                 
-                # Only show download options if we have results
+                # Only show preview and download options if we have results
                 if output_final and len(output_final) > 0:
-                    st.subheader("Download Options")
+                    # Add a preview section
+                    st.subheader("Data Preview")
                     
-                    # Create columns for download buttons
-                    col1, col2, col3, col4 = st.columns(4)
+                    # Add a toggle to show/hide the preview
+                    show_preview = st.checkbox("Show data preview", value=True)
                     
-                    # Make sure the files directory exists
-                    if not os.path.exists("files"):
-                        os.makedirs("files")
-                    
-                    # Save results and provide download buttons
-                    with col1:
-                        combined_file = f'files/{file_name}_concatenated.xlsx'
-                        write_output_final(output_final, excel_path=combined_file, option=1)
-                        
-                        with open(combined_file, "rb") as file:
-                            st.download_button(
-                                label="Download Format 1",
-                                data=file,
-                                file_name=f"{file_name}_concatenated.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                            )
-                        st.caption("All tables concatenated on a single sheet.")
-                    
-                    with col2:
-                        split_file = f'files/{file_name}_page_per_sheet.xlsx'
-                        write_output_final(output_final, excel_path=split_file, option=2)
-                        
-                        with open(split_file, "rb") as file:
-                            st.download_button(
-                                label="Download Format 2",
-                                data=file,
-                                file_name=f"{file_name}_page_per_sheet.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                            )
-                        st.caption("All tables on a page per sheet")
-                    
-                    with col3:
-                        one_sheet_file = f'files/{file_name}_all_tables_on_one_sheet.xlsx'
-                        write_output_final(output_final, excel_path=one_sheet_file, option=3)
-                        
-                        with open(one_sheet_file, "rb") as file:
-                            st.download_button(
-                                label="Download Format 3",
-                                data=file,
-                                file_name=f"{file_name}_all_tables_on_one_sheet.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                            )
-                        st.caption("All tables on one sheet")
-                    
-                    with col4:
-                        # Create a zip file containing all three Excel files
-                        zip_buffer = io.BytesIO()
-                        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-                            # Add each Excel file to the zip
-                            for file_path, file_type in [
-                                (combined_file, "concatenated"),
-                                (split_file, "page_per_sheet"),
-                                (one_sheet_file, "all_tables_on_one_sheet")
-                            ]:
-                                with open(file_path, "rb") as f:
-                                    zip_file.writestr(f"{file_name}_{file_type}.xlsx", f.read())
-                        
-                        # Set buffer position to start
-                        zip_buffer.seek(0)
-                        
-                        st.download_button(
-                            label="Download All Formats (ZIP)",
-                            data=zip_buffer,
-                            file_name=f"{file_name}_all_formats.zip",
-                            mime="application/zip"
+                    if show_preview:
+                        # Add format selection for preview
+                        preview_format = st.radio(
+                            "Select preview format:",
+                            ["Format 1: All tables concatenated", 
+                             "Format 2: Tables by page", 
+                             "Format 3: All tables on one sheet"],
+                            index=2  # Default to Format 3
                         )
-                        st.caption("All formats in a single ZIP file")
+                        
+                        # Add download button for the currently selected format
+                        # Make sure the files directory exists
+                        if not os.path.exists("files"):
+                            os.makedirs("files")
+                            
+                        # Create the download button based on file format
+                        if file_format == "Excel (.xlsx)":
+                            # Get the format option from the radio button selection
+                            format_option = int(preview_format.split(":")[0].split(" ")[1])
+                            excel_file = f'files/{file_name}_format_{format_option}.xlsx'
+                            write_output_final(output_final, excel_path=excel_file, option=format_option)
+                            
+                            with open(excel_file, "rb") as file:
+                                st.download_button(
+                                    label="Download",
+                                    data=file,
+                                    file_name=f"{file_name}_{preview_format.split(':')[0].strip().replace(' ', '_').lower()}.xlsx",
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                )
+                        else:  # CSV format
+                            csv_base_path = f'files/{file_name}'
+                            format_option = int(preview_format.split(":")[0].split(" ")[1])
+                            
+                            if format_option == 1:  # Format 1: All tables concatenated
+                                csv_file = f'{csv_base_path}_concatenated.csv'
+                                write_output_to_csv(output_final, csv_base_path=csv_base_path, option=1)
+                                
+                                with open(csv_file, "rb") as file:
+                                    st.download_button(
+                                        label="Download",
+                                        data=file,
+                                        file_name=f"{file_name}_concatenated.csv",
+                                        mime="text/csv"
+                                    )
+                            elif format_option == 2:  # Format 2: Tables by page
+                                # For CSV format 2, we create a zip with multiple files
+                                csv_files = write_output_to_csv(output_final, csv_base_path=csv_base_path, option=2)
+                                
+                                if csv_files:
+                                    # Create a zip file for multiple CSV files
+                                    zip_buffer = io.BytesIO()
+                                    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                                        for csv_path in csv_files:
+                                            filename = os.path.basename(csv_path)
+                                            with open(csv_path, "rb") as f:
+                                                zip_file.writestr(filename, f.read())
+                                    
+                                    # Set buffer position to start
+                                    zip_buffer.seek(0)
+                                    
+                                    st.download_button(
+                                        label="Download",
+                                        data=zip_buffer,
+                                        file_name=f"{file_name}_pages.zip",
+                                        mime="application/zip"
+                                    )
+                            else:  # Format 3: All tables on one sheet
+                                csv_file = f'{csv_base_path}_all_tables_with_gaps.csv'
+                                write_output_to_csv(output_final, csv_base_path=csv_base_path, option=3)
+                                
+                                with open(csv_file, "rb") as file:
+                                    st.download_button(
+                                        label="Download",
+                                        data=file,
+                                        file_name=f"{file_name}_all_tables_with_gaps.csv",
+                                        mime="text/csv"
+                                    )
+                        
+                        # Get all DataFrames
+                        all_dfs = list(itertools.chain.from_iterable(output_final))
+                        
+                        if preview_format == "Format 1: All tables concatenated":
+                            # Format 1: All tables concatenated vertically
+                            st.markdown("**Preview of 'All tables concatenated' format:**")
+                            
+                            if all_dfs:
+                                # Limit to first 100 rows for preview
+                                merged_df = pd.concat(all_dfs, axis=0)
+                                preview_rows = min(100, len(merged_df))
+                                st.dataframe(merged_df.head(preview_rows), use_container_width=True)
+                                if len(merged_df) > preview_rows:
+                                    st.info(f"Showing first {preview_rows} rows out of {len(merged_df)} total rows. Download the file to see all data.")
+                            else:
+                                st.info("No tables found to preview.")
+                                
+                        elif preview_format == "Format 2: Tables by page":
+                            # Format 2: Tables by page
+                            st.markdown("**Preview of 'Tables by page' format:**")
+                            
+                            # Create tabs for each page
+                            if output_final:
+                                # Limit to first 5 pages for preview
+                                preview_pages = min(5, len(output_final))
+                                tabs = st.tabs([f"Page {i+1}" for i in range(preview_pages)])
+                                
+                                for i in range(preview_pages):
+                                    with tabs[i]:
+                                        if output_final[i]:  # If page has tables
+                                            for j, df in enumerate(output_final[i]):
+                                                st.markdown(f"**Table {j+1}**")
+                                                st.dataframe(df, use_container_width=True)
+                                                if j < len(output_final[i]) - 1:
+                                                    st.markdown("---")
+                                        else:
+                                            st.info("No tables found on this page.")
+                                
+                                if len(output_final) > 5:
+                                    st.info(f"Showing first 5 pages out of {len(output_final)} total pages. Download the file to see all pages.")
+                            else:
+                                st.info("No pages with tables found to preview.")
+                                
+                        else:  # Format 3: All tables on one sheet
+                            # Format 3: All tables on one sheet with gaps
+                            st.markdown("**Preview of 'All tables on one sheet' format:**")
+                            
+                            # Limit to first 5 tables for preview
+                            preview_dfs = all_dfs[:min(5, len(all_dfs))]
+                            
+                            # Display each table with a separator
+                            for i, df in enumerate(preview_dfs):
+                                st.markdown(f"**Table {i+1}**")
+                                st.dataframe(df, use_container_width=True)
+                                
+                                # Add a separator between tables (except after the last one)
+                                if i < len(preview_dfs) - 1:
+                                    st.markdown("---")
+                            
+                            # Show a message if there are more tables
+                            if len(all_dfs) > 5:
+                                st.info("Download the file to see all tables.")
                     
+                    # Add a horizontal line between preview and download sections
+                    st.markdown("---")
+                    
+
                 else:
                     st.warning("No tables were found in the selected pages.")
     

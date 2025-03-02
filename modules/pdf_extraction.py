@@ -224,10 +224,10 @@ async def get_validated_table_info(text_input, user_text, open_api_key, base64_i
     num_tables1, headers1 = extract_table_info(output1)
     num_tables2, headers2 = extract_table_info(output2)
 
-    logging.debug(f"headers1: {headers1}")
-    logging.debug(f"headers2: {headers2}")
-    logging.debug(f"num_tables1: {num_tables1}")
-    logging.debug(f"num_tables2: {num_tables2}")
+    # logging.debug(f"headers1: {headers1}")
+    # logging.debug(f"headers2: {headers2}")
+    # logging.debug(f"num_tables1: {num_tables1}")
+    # logging.debug(f"num_tables2: {num_tables2}")
 
     if compare_table_headers(headers1, headers2) or (num_tables1 == num_tables2 and num_tables1 is not None):
         logging.info("Initial table info match or same table count. Returning first attempt's result.")
@@ -490,7 +490,7 @@ async def process_tables_to_df(
 
     # 2) Process the results into DataFrames
     logging.debug(f"Comparing results ouput {len(results_output)} with the table headers {len(table_headers) } for page {page_number + 1}")
-    logging.debug(f"results_output: {results_output}")
+    # logging.debug(f"results_output: {results_output}")
     df_list = []
     for i, out in enumerate(results_output):
         extract_retry_count = 0
@@ -658,6 +658,114 @@ def write_output_final(output_final, excel_path, option=1, gap_rows=2):
         raise  # Re-raise the exception after logging
 
     logging.info("Excel file writing complete.")
+
+def write_output_to_csv(output_final, csv_base_path, option=1, gap_rows=2):
+    """
+    Writes nested lists of DataFrames (`output_final`) to CSV files in 3 different ways.
+
+    :param output_final: A list of lists of DataFrames. 
+    :param csv_base_path: Base path/filename for CSV output (without extension)
+    :param option: Choose 1 of 3 write modes:
+                   1 = Horizontally merge all DataFrames into one CSV file
+                   2 = Each top-level group in its own CSV file, with gap rows between tables
+                   3 = Flatten all DataFrames into one CSV file with gap rows between them
+    :param gap_rows: How many blank rows to insert between tables (for options 2 and 3).
+    :return: List of paths to generated CSV files
+    """
+    logging.info(f"Writing output to CSV at '{csv_base_path}' with option={option}.")
+    generated_files = []
+    
+    # Helper function to sanitize DataFrames before writing to CSV
+    def sanitize_dataframe(df):
+        df_clean = df.copy()
+        
+        # Replace problematic characters in column names
+        df_clean.columns = [re.sub(r'[\[\]:*?/\\]', '_', str(col)) for col in df_clean.columns]
+        
+        # Replace problematic characters in string data
+        for col in df_clean.columns:
+            if df_clean[col].dtype == 'object':  # Only process string columns
+                df_clean[col] = df_clean[col].astype(str).apply(
+                    lambda x: re.sub(r'[\x00-\x08\x0B-\x0C\x0E-\x1F]', '', x) if pd.notna(x) else x
+                )
+        
+        return df_clean
+    
+    try:
+        if option == 1:
+            logging.debug("Option 1: Merging all DataFrames into one CSV file.")
+            all_dfs = list(itertools.chain.from_iterable(output_final))
+            # Sanitize each DataFrame before concatenation
+            all_dfs_clean = [sanitize_dataframe(df) for df in all_dfs]
+            merged_df = pd.concat(all_dfs_clean, axis=0)
+            
+            csv_path = f"{csv_base_path}_concatenated.csv"
+            merged_df.to_csv(csv_path, index=False)
+            generated_files.append(csv_path)
+            
+        elif option == 2:
+            logging.debug("Option 2: Each group in a separate CSV file.")
+            for page_idx, df_group in enumerate(output_final):
+                if not df_group:  # Skip empty groups
+                    continue
+                    
+                # Create a new DataFrame for each page with appropriate gaps
+                result_df = pd.DataFrame()
+                current_row = 0
+                
+                for df in df_group:
+                    df_clean = sanitize_dataframe(df)
+                    
+                    # Add blank rows if not at the start
+                    if current_row > 0:
+                        for _ in range(gap_rows):
+                            result_df = pd.concat([result_df, pd.DataFrame([[''] * len(df_clean.columns)], columns=df_clean.columns)])
+                            current_row += 1
+                    
+                    # Add the actual data
+                    result_df = pd.concat([result_df, df_clean])
+                    current_row += len(df_clean)
+                
+                csv_path = f"{csv_base_path}_page_{page_idx+1}.csv"
+                result_df.to_csv(csv_path, index=False)
+                generated_files.append(csv_path)
+                
+        elif option == 3:
+            logging.debug("Option 3: Flatten all DataFrames into one CSV with gaps.")
+            all_dfs = list(itertools.chain.from_iterable(output_final))
+            
+            # First determine the maximum column count across all tables
+            max_cols = max([len(df.columns) for df in all_dfs]) if all_dfs else 0
+            
+            # Create a new large DataFrame with appropriate gaps
+            result_df = pd.DataFrame()
+            
+            for i, df in enumerate(all_dfs):
+                df_clean = sanitize_dataframe(df)
+                
+                # Add blank rows if not at the start
+                if i > 0:
+                    blank_df = pd.DataFrame([[''] * max_cols])
+                    for _ in range(gap_rows):
+                        result_df = pd.concat([result_df, blank_df])
+                
+                # Add the current DataFrame
+                result_df = pd.concat([result_df, df_clean])
+            
+            csv_path = f"{csv_base_path}_all_tables_with_gaps.csv"
+            result_df.to_csv(csv_path, index=False)
+            generated_files.append(csv_path)
+            
+        else:
+            logging.error("Invalid `option` provided to write_output_to_csv.")
+            raise ValueError("Invalid `option` - must be 1, 2, or 3.")
+    
+    except Exception as e:
+        logging.error(f"Error writing to CSV: {str(e)}")
+        raise  # Re-raise the exception after logging
+
+    logging.info(f"CSV file writing complete. Generated files: {generated_files}")
+    return generated_files
 
 
 

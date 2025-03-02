@@ -11,6 +11,7 @@ from modules.pdf_extraction import (
     extract_text_from_pages,
     select_pdf_file,
     write_output_final,
+    write_output_to_csv,
     parse_column_data,
     get_validated_table_info,
     get_page_pixel_data,
@@ -51,7 +52,7 @@ file_name = 'split_test_1'
 user_text = 'Extract all data from the table(s)'
 table_in_image = True # may require more review
 add_in_table_and_page_information = True
-
+file_format = "excel"  # Default to Excel. Change to "csv" to use CSV output.
 
 # 1. Load Credentials
 logging.info("Loading environment variables from .env file.")
@@ -160,22 +161,42 @@ end_time = time.time()
 elapsed_time = end_time - start_time
 logging.info(f"Processing took {elapsed_time:.2f} seconds")
 
-# Save to Excel - combined tables (option=1)
-output_path_combined = f'files/{file_name}_page_combined.xlsx'
-logging.info(f"Writing combined table results to '{output_path_combined}'.")
-write_output_final(output_final, excel_path=output_path_combined, option=1)
-logging.info(f"Results saved to {output_path_combined}")
 
-# Save to Excel - split tables (option=2)
-output_path_split = f'files/{file_name}_page_split.xlsx'
-logging.info(f"Writing split tables to '{output_path_split}'.")
-write_output_final(output_final, excel_path=output_path_split, option=2)
-logging.info(f"Results saved to {output_path_split}")
+if file_format == "excel":
+    # Save to Excel - combined tables (option=1)
+    output_path_combined = f'files/{file_name}_page_combined.xlsx'
+    logging.info(f"Writing combined table results to '{output_path_combined}'.")
+    write_output_final(output_final, excel_path=output_path_combined, option=1)
+    logging.info(f"Results saved to {output_path_combined}")
 
-# Save to Excel - one sheet with gaps (option=3)
-output_path_one_sheet = f'files/{file_name}_one_sheet_split.xlsx'
-logging.info(f"Writing all tables on one sheet to '{output_path_one_sheet}'.")
-write_output_final(output_final, excel_path=output_path_one_sheet, option=3)
-logging.info(f"Results saved to {output_path_one_sheet}")
+    # Save to Excel - split tables (option=2)
+    output_path_split = f'files/{file_name}_page_split.xlsx'
+    logging.info(f"Writing split tables to '{output_path_split}'.")
+    write_output_final(output_final, excel_path=output_path_split, option=2)
+    logging.info(f"Results saved to {output_path_split}")
+
+    # Save to Excel - one sheet with gaps (option=3)
+    output_path_one_sheet = f'files/{file_name}_one_sheet_split.xlsx'
+    logging.info(f"Writing all tables on one sheet to '{output_path_one_sheet}'.")
+    write_output_final(output_final, excel_path=output_path_one_sheet, option=3)
+    logging.info(f"Results saved to {output_path_one_sheet}")
+else:
+    # Save to CSV format
+    csv_base_path = f'files/{file_name}'
+    
+    # Save to CSV - combined tables (option=1)
+    logging.info(f"Writing combined table results to CSV.")
+    csv_files = write_output_to_csv(output_final, csv_base_path=csv_base_path, option=1)
+    logging.info(f"Results saved to {csv_files}")
+    
+    # Save to CSV - split tables (option=2)
+    logging.info(f"Writing split tables to CSV.")
+    csv_files = write_output_to_csv(output_final, csv_base_path=csv_base_path, option=2)
+    logging.info(f"Results saved to {csv_files}")
+    
+    # Save to CSV - one file with gaps (option=3)
+    logging.info(f"Writing all tables with gaps to CSV.")
+    csv_files = write_output_to_csv(output_final, csv_base_path=csv_base_path, option=3)
+    logging.info(f"Results saved to {csv_files}")
 
 logging.info("All tasks completed successfully. Exiting main.")
