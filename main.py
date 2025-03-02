@@ -17,6 +17,10 @@ from modules.pdf_extraction import (
     process_tables_to_df
 )
 
+# Create files directory if it doesn't exist
+if not os.path.exists("files"):
+    os.makedirs("files")
+
 # Create logs directory if it doesn't exist
 if not os.path.exists("logs"):
     os.makedirs("logs")
