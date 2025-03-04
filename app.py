@@ -75,7 +75,7 @@ openai_client = OpenAI(api_key=open_api_key)
 
 # App title and description
 st.title("PDF Table Extractor AI")
-st.markdown("Upload a PDF file to extract tables.")
+# st.markdown("Upload a PDF file to extract tables.")
 
 # Sidebar for options
 with st.sidebar:
@@ -96,17 +96,46 @@ with st.sidebar:
         height=200  # Make the box much taller
     )
     
+    st.markdown("---")  # Add some space with a horizontal line
+    
     # Add checkbox for table in image detection
-    table_in_image = st.checkbox("Detect tables in images", value=False, 
-                                help="Enable this if your PDF contains tables within images")
+    table_in_image = st.checkbox("Image & Inference Mode", value=True, 
+                                help="Enable this mode for: (1) Extracting tables from images within PDFs, (2) Adding creative interpretations like additional columns or values based on user instructions. Note: This mode bypasses text validation for more flexible results.")
+    
     
     add_in_table_and_page_information = st.checkbox("Add table and page information", value=False, 
                                 help="Enable this if you want to add table name, position and page number to the table")
+
+    st.markdown("---")  # Add some space with a horizontal line
     
+    # Add model selection dropdown
+    model = st.selectbox(
+        "Select AI model",
+        options=["o1", "gpt-4o", "gpt-4o-mini",],
+        index=1
+    )
+    
+
+    
+    
+    st.markdown("""
+        <div style="font-size:0.8em; color:gray;">
+        <strong>Model information:</strong><br>
+        • <strong>o1</strong>: Advanced model, may handle complex layouts better<br>
+        • <strong>gpt-4o</strong>: Balanced performance, recommended for most tables<br>
+        • <strong>gpt-4o-mini</strong>: Faster, lower cost, but may be less accurate for complex tables<br>
+
+        </div>
+    """, unsafe_allow_html=True)
+
     # Add file format selection in the sidebar
     st.markdown("---")
     st.subheader("Output Format")
-    file_format = st.radio("Select file format:", ["Excel (.xlsx)", "CSV (.csv)"])
+    file_format = st.selectbox(
+        "Select file format:",
+        options=["Excel (.xlsx)", "CSV (.csv)"],
+        index=0
+    )
     
     # Validate inputs - ensure defaults if empty
     if not file_name.strip():
@@ -287,11 +316,12 @@ if uploaded_file:
                                     image_type='png'
                                 )
                                 
-                                num_tables, table_headers, confidence_score = await get_validated_table_info(
+                                num_tables, table_headers, _ = await get_validated_table_info(
                                     text_input=extracted_text,
                                     user_text=user_text,
                                     open_api_key=open_api_key,
-                                    base64_image=base64_image
+                                    base64_image=base64_image,
+                                    model='gpt-4o' # for table header detection stick with gpt-4o
                                 )
                                 
                                 logging.debug(f"num_tables: {num_tables}")
@@ -312,7 +342,8 @@ if uploaded_file:
                                     open_api_key,
                                     page_no,
                                     table_in_image,
-                                    add_in_table_and_page_information
+                                    add_in_table_and_page_information,
+                                    model
                                 )))
                             
                             # Await all tasks to complete
@@ -348,18 +379,19 @@ if uploaded_file:
                 # Only show preview and download options if we have results
                 if output_final and len(output_final) > 0:
                     # Add a preview section
-                    st.subheader("Data Preview")
+                    # st.subheader("Data Preview")
                     
+
                     # Add a toggle to show/hide the preview
                     show_preview = st.checkbox("Show data preview", value=True)
                     
                     if show_preview:
                         # Add format selection for preview
-                        preview_format = st.radio(
+                        preview_format = st.selectbox(
                             "Select preview format:",
-                            ["Format 1: All tables concatenated", 
-                             "Format 2: Tables by page", 
-                             "Format 3: All tables on one sheet"],
+                            options=["Format 1: All tables concatenated", 
+                                    "Format 2: Tables by page", 
+                                    "Format 3: All tables on one sheet"],
                             index=2  # Default to Format 3
                         )
                         

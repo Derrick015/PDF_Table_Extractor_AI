@@ -35,7 +35,7 @@ if not os.path.exists("logs"):
 
 log_file = os.path.join("logs", "main.log")
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler(log_file),
@@ -53,6 +53,7 @@ user_text = 'Extract all data from the table(s)'
 table_in_image = True # may require more review
 add_in_table_and_page_information = True
 file_format = "excel"  # Default to Excel. Change to "csv" to use CSV output.
+model = "gpt-4o"  # Default model to use for API calls
 
 # 1. Load Credentials
 logging.info("Loading environment variables from .env file.")
@@ -114,11 +115,12 @@ async def process_page():
                 )
             
                 logging.debug("Validating table information via LLM.")
-                num_tables, table_headers, confidence_score_0 = await get_validated_table_info(
+                num_tables, table_headers, _ = await get_validated_table_info(
                     text_input=extracted_text,
                     user_text=user_text,
                     open_api_key=open_api_key,
-                    base64_image=base64_image
+                    base64_image=base64_image,
+                    model=model
                 )
 
                 if num_tables == 0:
@@ -135,7 +137,8 @@ async def process_page():
                     open_api_key,
                     page_no,
                     table_in_image,
-                    add_in_table_and_page_information
+                    add_in_table_and_page_information,
+                    model=model
                 )))
             
             # Await all tasks to complete

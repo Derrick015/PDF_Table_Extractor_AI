@@ -442,11 +442,11 @@ async def process_tables_to_df(
     page_number,
     table_in_image,
     add_in_table_and_page_information,  
+    model,
     max_retries=3,
     initial_delay=1,
     backoff_factor=2,
-    max_extract_retries_for_extraction_failures=2,
-    model='gpt-4o'
+    max_extract_retries_for_extraction_failures=2
 ):
     """
     Process tables by calling an LLM parser with exponential backoff.
@@ -469,8 +469,7 @@ async def process_tables_to_df(
                             table_to_target=table,
                             base64_image=base64_image,
                             open_api_key=open_api_key,
-                            model= model,
-                            temperature=0.7
+                            model= model
                         )
                     ))
             results_output = [task.result() for task in tasks]
@@ -535,11 +534,10 @@ async def process_tables_to_df(
                             table_to_target=table_headers[i],
                             base64_image=base64_image,
                             open_api_key=open_api_key,
-                            model=model,
-                            temperature=1
+                            model=model
                         )
                         results_output[i] = out  # Update the results_output with the new result
-                        logging.info(f"Regenerated table data for index {i}, with model 'o1', table '{table_headers[i]}, output was {out}")
+                        logging.info(f"Regenerated table data for index {i}, with model, table '{table_headers[i]}, output was {out}")
                     except Exception as regen_error:
                         logging.error(f"Failed to regenerate table data: {str(regen_error)}")
                         # Continue to next retry or exit loop if max retries reached

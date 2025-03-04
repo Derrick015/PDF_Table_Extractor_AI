@@ -421,7 +421,7 @@ dict_example = """[
 ]"""
 
 
-async def vision_llm_parser(user_text, text_input, table_to_target, base64_image, open_api_key, model='gpt-4o', temperature=0.2):
+async def vision_llm_parser(user_text, text_input, table_to_target, base64_image, open_api_key, model='gpt-4o'):
 
         headers = {
             "Content-Type": "application/json",
@@ -431,7 +431,7 @@ async def vision_llm_parser(user_text, text_input, table_to_target, base64_image
 
         payload = {
             "model": model,
-            "temperature": temperature, 
+            # "temperature": temperature, 
             # "frequency_penalty": 0.2,
             "messages": [
                 {
@@ -476,9 +476,9 @@ async def vision_llm_parser(user_text, text_input, table_to_target, base64_image
           ``````````````````````````
           NOTE: Column names may be numerical (eg 0314, 4532, etc), textual or alphanumerical, ensure they are returned exactly as is.
           NOTE: Ensure the table extracted is as like for like as the table represented in the image.
+          NOTE: Some tables may not have any clean column names. In such cases use your expertise to create suitable one. 
         
-          Now provide the output for the following:
-           
+          Thinking step by step provide the output for the following:
           ``````````````````````````
           User's request: {user_text}
           ``````````````````````````
