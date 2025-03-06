@@ -126,7 +126,6 @@ SOFTWARE.
 For questions, support, or collaboration:
 
 - GitHub Issues: Please use the [issue tracker](https://github.com/Derrick015/PDF_Table_Extractor_AI) for bug reports and feature requests
-- Email: derrickowusuof@gmail.com
 - LinkedIn: [Derrick Ofori](https://www.linkedin.com/in/derrickofori/)
 
 Feel free to reach out through any of these channels. For bug reports and feature requests, please use GitHub Issues as the primary channel. 
