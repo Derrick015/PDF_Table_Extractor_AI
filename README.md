@@ -1,15 +1,14 @@
 # PDF Table Extractor AI
 
-A powerful tool that uses AI vision models to extract tabular data from PDF documents.
+A powerful tool that uses AI models to extract tabular data from PDF documents.
 
 ## Overview
 
-PDF Table Extractor AI is designed to solve the challenging problem of extracting structured table data from PDF files. It leverages OpenAI's advanced vision models to identify, parse, and extract tables, even from complex PDFs with varying layouts and formats.
-
+PDF Table Extractor AI is designed to solve the challenging problem of extracting structured table data from PDF files. It leverages advanced multimodal models to identify, parse, and extract tables from PDFs.
 ## Key Features
 
 - **AI-Powered Table Detection**: Automatically identifies tables within PDF documents
-- **Data Extraction**: Preserves table structure and relationships between data elements
+- **Data Extraction**: Extracts structured data from tables
 - **Multiple Page Processing**: Process specific pages, page ranges, or entire documents
 - **Customizable AI Instructions**: Provide specific extraction instructions for tailored results
 - **Multiple Export Formats**: Download extracted tables in Excel or CSV formats
@@ -61,27 +60,28 @@ The application will be available at http://localhost:8501 in your web browser.
 3. Review page previews to confirm your selection
 4. Optionally, customize the AI instructions in the sidebar
 5. Enable additional options if needed:
-   - Detect tables in images
+   - Image & Inference Mode
    - Add table and page information to the output
+6. Select a model of your choice
 6. Choose your preferred output format (Excel or CSV)
 7. Click "Process Selected Pages" to start extraction
 8. Download the results in your preferred format:
    - Format 1: All tables concatenated on a single sheet
-   - Format 2: Tables by page
+   - Format 2: All Tables on a page per sheet with spacing
    - Format 3: All tables on one sheet with spacing
 
 ## How It Works
 
 1. **Table Detection**: The AI vision model analyzes the PDF to identify and locate tables
 2. **Structure Recognition**: The system determines table headers, rows, and columns
-3. **Data Extraction**: Content is extracted while preserving the table structure
-4. **Validation**: Multiple AI passes to mitigate hallucination and improve accuracy and consistency. Generated values are also cross checked with values on the PDF text and replaced with N/A if abscent. 
+3. **Data Extraction**: Content is extracted based on available PDF text. In its absence the model will try to make an inference from the image. 
+4. **Validation**: Multiple AI passes to mitigate hallucination and improve accuracy and consistency. If image & inference mode is turned of generated values are also cross checked with values on the PDF text and replaced with N/A if abscent. 
 5. **Export**: Data is formatted into Excel or CSV files for easy use
 
 ## Technical Details
 
 - **PDF Processing**: Uses PyMuPDF for efficient PDF handling
-- **AI Vision**: Leverages OpenAI's GPT-4o model for visual recognition
+- **AI Vision and Text Extration**: Leverages OpenAI's model for visual recognition and text extraction
 - **Concurrent Processing**: Implements asyncio for parallel page processing
 - **Data Handling**: Pandas for structured data manipulation
 - **Web Interface**: Streamlit for an intuitive user experience
@@ -120,12 +120,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
-
-## Acknowledgements
-
-- OpenAI for providing the vision models
-- PyMuPDF for PDF processing capabilities
-- Streamlit for the web application framework
 
 ## Contact
 

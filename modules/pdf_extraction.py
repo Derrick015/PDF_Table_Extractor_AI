@@ -1,4 +1,3 @@
-import pymupdf
 import tkinter as tk
 from tkinter import filedialog
 import logging
@@ -9,8 +8,11 @@ import re
 import ast
 import itertools
 import asyncio
-from modules.llm import table_identification_llm, vision_column_llm_parser, vision_llm_parser
-import aiohttp
+from modules.llm import table_identification_llm,  vision_llm_parser
+
+
+
+
 
 def extract_text_from_pages(pdf_input, pages=None):
     """
@@ -182,6 +184,13 @@ def extract_table_info(text):
 def compare_table_headers(headers1, headers2):
     """
     Compare two lists of table headers and return True if they are the same.
+    
+    Parameters:
+        headers1 (list): First list of table headers to compare
+        headers2 (list): Second list of table headers to compare
+        
+    Returns:
+        bool: True if the headers match, False otherwise
     """
     logging.debug(f"Comparing table headers:\n{headers1}\n{headers2}")
     if len(headers1) != len(headers2):
@@ -197,10 +206,29 @@ async def get_validated_table_info(text_input, user_text, open_api_key, base64_i
     Attempt to retrieve consistent table information by making multiple calls
     to the table identification LLM. If there's a majority match or exact match
     between attempts, return that; otherwise return the third attempt's output.
+    
+    Parameters:
+        text_input (str): Extracted text from the PDF page
+        user_text (str): User's request or instructions
+        open_api_key (str): OpenAI API key
+        base64_image (str): Base64-encoded image of the PDF page
+        model (str): OpenAI model to use, defaults to 'gpt-4o'
+        
+    Returns:
+        tuple: (num_tables, table_headers, confidence_level)
+            - num_tables (int): Number of tables detected
+            - table_headers (list): List of identified table headers
+            - confidence_level (int): Confidence level (0=highest, higher numbers=lower confidence)
     """
     logging.info("Validating table information with multiple LLM calls.")
 
-    async def asycn_pattern_desc():
+    async def async_pattern_desc():
+        """
+        Inner async function to call the table identification LLM.
+        
+        Returns:
+            str: The response text from the LLM containing table identification information
+        """
         return await table_identification_llm(
             text_input=text_input,
             user_text=user_text,
@@ -212,8 +240,8 @@ async def get_validated_table_info(text_input, user_text, open_api_key, base64_i
     tasks = []
     # Create first two tasks
     async with asyncio.TaskGroup() as tg:
-        tasks.append(tg.create_task(asycn_pattern_desc()))
-        tasks.append(tg.create_task(asycn_pattern_desc()))
+        tasks.append(tg.create_task(async_pattern_desc()))
+        tasks.append(tg.create_task(async_pattern_desc()))
     
     # Wait for first two tasks
     output1 = await tasks[0]
@@ -224,18 +252,13 @@ async def get_validated_table_info(text_input, user_text, open_api_key, base64_i
     num_tables1, headers1 = extract_table_info(output1)
     num_tables2, headers2 = extract_table_info(output2)
 
-    # logging.debug(f"headers1: {headers1}")
-    # logging.debug(f"headers2: {headers2}")
-    # logging.debug(f"num_tables1: {num_tables1}")
-    # logging.debug(f"num_tables2: {num_tables2}")
-
     if compare_table_headers(headers1, headers2) or (num_tables1 == num_tables2 and num_tables1 is not None):
         logging.info("Initial table info match or same table count. Returning first attempt's result.")
         return num_tables1, headers1, 0 # 0 indicates the highest confidence. The higher the number, the lower the confidence. 
 
     # Create third task if needed
     async with asyncio.TaskGroup() as tg:
-        task3 = tg.create_task(asycn_pattern_desc())
+        task3 = tg.create_task(async_pattern_desc())
     output3 = await task3
     logging.debug(f"LLM attempt 3 output:\n{output3}")
 
@@ -259,6 +282,15 @@ def compare_column_data(data1, data2):
     """
     Compare two sets of column data results and return (bool, issue_table_headers).
     If mismatch occurs, return which table headers encountered an issue.
+    
+    Parameters:
+        data1 (list): First set of column data to compare
+        data2 (list): Second set of column data to compare
+        
+    Returns:
+        tuple: (match_found, issue_table_headers)
+            - match_found (bool): True if the column data matches, False otherwise
+            - issue_table_headers (list): List of table headers that had issues
     """
     logging.debug("Comparing column data for consistency.")
     issue_table_headers = []
@@ -284,7 +316,19 @@ def compare_column_data(data1, data2):
 
 def extract_columns(response_text, tables_to_target):
     """
-    Extract column info from the LLM response text using regex. 
+    Extract column info from the LLM response text using regex.
+    
+    Parameters:
+        response_text (str): The text response from the LLM containing column information
+        tables_to_target (list): List of table headers to target for extraction
+        
+    Returns:
+        list: List of dictionaries containing extracted column information with keys:
+            - index: Table index
+            - table_header: Header of the table
+            - column_names: List of column names
+            - example_values_per_column: Example values for each column
+            - table_location: Location information for the table
     """
     logging.debug("Extracting columns from LLM response.")
     pattern = r'index:\s*\[(\d+)\].*?column_names:\s*\[(.*?)\].*?example_value_per_column:\s*\[(.*?)\].*?table_location:\s*\[(.*?)\]'
@@ -315,88 +359,17 @@ def extract_columns(response_text, tables_to_target):
     logging.debug(f"Extracted columns result: {results}")
     return results
 
-async def parse_column_data(user_text, text_input, tables_to_target, base64_image, table_list, open_api_key, model='gpt-4o'):
-    """
-    Asynchronously parse column data from the PDF using an LLM, making multiple attempts for reliability.
-    """
-    logging.info("Parsing column data with multiple attempts to ensure accuracy.")
 
-    async def async_pattern_desc():
-        max_retries = 3
-        retry_delay = 1
-        
-        for attempt in range(max_retries):
-            try:
-                llm_parser_desc = await vision_column_llm_parser(
-                    user_text=user_text,
-                    text_input=text_input,
-                    table_to_target=tables_to_target,
-                    base64_image=base64_image,
-                    open_api_key=open_api_key,
-                    model=model
-                )
-                return llm_parser_desc
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    logging.error("All retries failed in async_pattern_desc. Raising exception.")
-                    raise
-                logging.warning(f"Attempt {attempt + 1} failed: {str(e)}. Retrying...")
-                await asyncio.sleep(retry_delay * (attempt + 1))
-
-    tasks = []
-    try:
-        # First two attempts concurrently
-        async with asyncio.TaskGroup() as tg:
-            tasks.append(tg.create_task(async_pattern_desc()))
-            tasks.append(tg.create_task(async_pattern_desc()))
-
-        output1 = await tasks[0]
-        output2 = await tasks[1]
-        logging.debug(f"Output 1:\n{output1}")
-        logging.debug(f"Output 2:\n{output2}")
-
-        results1 = extract_columns(output1, table_list)
-        results2 = extract_columns(output2, table_list)
-
-        bool_decision, issue_table_headers_0 = compare_column_data(results1, results2)
-        
-        if bool_decision:
-            logging.info("Initial phase column parsing match. Returning results1.")
-            return results1, issue_table_headers_0, 0
-        
-        # Third attempt if needed
-        async with asyncio.TaskGroup() as tg:
-            task3 = tg.create_task(async_pattern_desc())
-        output3 = await task3
-        logging.debug(f"Output 3:\n{output3}")
-
-        results3 = extract_columns(output3, table_list)
-
-        logging.warning("Comparing results 1 and 3.")
-        bool_decision, issue_table_headers = compare_column_data(results1, results3)
-        if bool_decision:
-            logging.warning("Majority match found with first and third results.")
-            return results1, issue_table_headers_0, 1
-
-        logging.warning("Comparing results 2 and 3.")
-        bool_decision, issue_table_headers = compare_column_data(results2, results3)
-        if bool_decision:
-            logging.warning("Majority match found with second and third results.")
-            return results2, issue_table_headers_0, 1
-
-        logging.warning("No matching results found, returning third result with low confidence.")
-        return results3, issue_table_headers, 2
-
-    except aiohttp.ClientError as e:
-        logging.error(f"Network error occurred: {str(e)}")
-        raise
-    except Exception as e:
-        logging.error(f"Unexpected error in parse_column_data: {str(e)}")
-        raise
 
 def parse_variable_data_to_df(text):
     """
     Parse variable data text into a pandas DataFrame.
+    
+    Parameters:
+        text (str): Text containing variable data in the format [key:value]
+        
+    Returns:
+        pandas.DataFrame: DataFrame containing the parsed variable data
     """
     logging.info("Parsing variable data into DataFrame.")
     pattern = r"\[([^\]:]+):([^]]+)\]"
@@ -421,6 +394,15 @@ def parse_variable_data_to_df(text):
 def extract_df_from_string(text):
     """
     Extracts a DataFrame from a string that contains a Python list/dict-like structure.
+    
+    Parameters:
+        text (str): String containing a Python list/dict-like structure
+        
+    Returns:
+        pandas.DataFrame: DataFrame created from the extracted data structure
+        
+    Raises:
+        ValueError: If no tables can be extracted from the string
     """
     logging.debug("Extracting DataFrame from string representation.")
     match = re.search(r'(\[.*\])', text, re.DOTALL)
@@ -443,13 +425,31 @@ async def process_tables_to_df(
     table_in_image,
     add_in_table_and_page_information,  
     model,
-    max_retries=3,
+    max_retries=2,
     initial_delay=1,
     backoff_factor=2,
     max_extract_retries_for_extraction_failures=2
 ):
     """
     Process tables by calling an LLM parser with exponential backoff.
+    
+    Parameters:
+        table_headers (list): List of table headers to process
+        user_text (str): User's text input
+        extracted_text (str): Text extracted from the PDF
+        base64_image (str): Base64-encoded image of the PDF page
+        open_api_key (str): OpenAI API key
+        page_number (int): Page number being processed (0-indexed)
+        table_in_image (bool): Whether the table is in the image
+        add_in_table_and_page_information (bool): Whether to add table and page information
+        model (str): LLM model to use
+        max_retries (int): Maximum number of retries for API calls
+        initial_delay (int): Initial delay in seconds before retrying
+        backoff_factor (int): Factor by which to increase delay between retries
+        max_extract_retries_for_extraction_failures (int): Maximum retries for extraction failures
+        
+    Returns:
+        list: List of pandas DataFrames containing the extracted table data
     """
     logging.info(f"Processing tables to DataFrame for page {page_number + 1}")
     
@@ -489,7 +489,7 @@ async def process_tables_to_df(
 
     # 2) Process the results into DataFrames
     logging.debug(f"Comparing results ouput {len(results_output)} with the table headers {len(table_headers) } for page {page_number + 1}")
-    # logging.debug(f"results_output: {results_output}")
+
     df_list = []
     for i, out in enumerate(results_output):
         extract_retry_count = 0
@@ -513,8 +513,15 @@ async def process_tables_to_df(
                     )
                     
                 if add_in_table_and_page_information:
-                    df['table_header_position'] = table_headers[i]
-                    df['page_number'] = page_number + 1
+                    # Split the table header and position information
+                    header_parts = table_headers[i].split(" - Can be found ")
+                    table_header = header_parts[0].strip()
+                    table_position = "Can be found " + header_parts[1].strip() if len(header_parts) > 1 else ""
+                    
+                    # Add as separate columns
+                    df['Table Header'] = table_header
+                    df['Table Position'] = table_position
+                    df['Page Number'] = page_number + 1
 
                 df_list.append(df)
                 break  # Successfully extracted, exit the retry loop
@@ -523,9 +530,7 @@ async def process_tables_to_df(
                 extract_retry_count += 1
                 if extract_retry_count <= max_extract_retries:
                     logging.warning(f"Could not extract table with index {i} on page {page_number + 1}. Retry attempt {extract_retry_count}...")
-                    # logging.error("Full error traceback:", exc_info=True)
-                    # Regenerate the specific table result using vision_llm_parser. 
-                    # Previous llm generation might not have been suitbale for the extraction function. 
+
                     try:
                         logging.info(f"Regenerating table data for index {i}, table '{table_headers[i]}'")
                         out = await vision_llm_parser(
@@ -556,7 +561,7 @@ async def process_tables_to_df(
 
 def sanitize_worksheet_name(name):
     """
-    Sanitize Excel worksheet names by removing or replacing characters that are not allowed.
+    Sanitie Excel worksheet names by removing or replacing characters that are not allowed.
     
     Excel worksheet naming rules:
     - Can't exceed 31 characters
@@ -586,18 +591,32 @@ def write_output_final(output_final, excel_path, option=1, gap_rows=2):
     """
     Writes nested lists of DataFrames (`output_final`) to Excel in 3 different ways.
 
-    :param output_final: A list of lists of DataFrames. 
-    :param excel_path: Output Excel filename/path
-    :param option: Choose 1 of 3 write modes:
+    Parameters:
+        output_final (list): A list of lists of DataFrames
+        excel_path (str): Output Excel filename/path
+        option (int): Choose 1 of 3 write modes:
                    1 = Horizontally merge (side-by-side) all DataFrames into one wide table (one sheet)
                    2 = Each top-level group on its own sheet, with `gap_rows` blank rows between sub-DataFrames
                    3 = Flatten all DataFrames onto one sheet vertically, with `gap_rows` blank rows between them
-    :param gap_rows: How many blank rows to insert between tables (used in options 2 and 3).
+        gap_rows (int): How many blank rows to insert between tables (used in options 2 and 3)
+        
+    Returns:
+        None
     """
     logging.info(f"Writing output to Excel at '{excel_path}' with option={option}.")
     
-    # Replace problematic characters in all dataframes before writing
     def sanitize_dataframe(df):
+        """
+        Create a clean copy of a DataFrame with problematic characters replaced in both
+        column names and string data to ensure compatibility with Excel limitations.
+        
+        Parameters:
+            df (pandas.DataFrame): The DataFrame to sanitize
+            
+        Returns:
+            pandas.DataFrame: A sanitized copy of the input DataFrame with problematic characters
+                             replaced and formatted to avoid Excel compatibility issues
+        """
         # Create a copy to avoid modifying the original
         df_clean = df.copy()
         
@@ -661,20 +680,34 @@ def write_output_to_csv(output_final, csv_base_path, option=1, gap_rows=2):
     """
     Writes nested lists of DataFrames (`output_final`) to CSV files in 3 different ways.
 
-    :param output_final: A list of lists of DataFrames. 
-    :param csv_base_path: Base path/filename for CSV output (without extension)
-    :param option: Choose 1 of 3 write modes:
+    Parameters:
+        output_final (list): A list of lists of DataFrames
+        csv_base_path (str): Base path/filename for CSV output (without extension)
+        option (int): Choose 1 of 3 write modes:
                    1 = Horizontally merge all DataFrames into one CSV file
                    2 = Each top-level group in its own CSV file, with gap rows between tables
                    3 = Flatten all DataFrames into one CSV file with gap rows between them
-    :param gap_rows: How many blank rows to insert between tables (for options 2 and 3).
-    :return: List of paths to generated CSV files
+        gap_rows (int): How many blank rows to insert between tables (for options 2 and 3)
+        
+    Returns:
+        list: List of paths to generated CSV files
     """
     logging.info(f"Writing output to CSV at '{csv_base_path}' with option={option}.")
     generated_files = []
     
-    # Helper function to sanitize DataFrames before writing to CSV
     def sanitize_dataframe(df):
+        """
+        Create a clean copy of a DataFrame with problematic characters replaced in both
+        column names and string data to ensure compatibility with CSV format limitations.
+        
+        Parameters:
+            df (pandas.DataFrame): The DataFrame to sanitize
+            
+        Returns:
+            pandas.DataFrame: A sanitized copy of the input DataFrame with problematic characters
+                             replaced and formatted to avoid CSV compatibility issues
+        """
+        # Create a copy to avoid modifying the original
         df_clean = df.copy()
         
         # Replace problematic characters in column names

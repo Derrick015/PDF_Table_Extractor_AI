@@ -1,4 +1,6 @@
 .env
+main.py
+notebook.ipynb
 archive/
 logs/*
 files/*

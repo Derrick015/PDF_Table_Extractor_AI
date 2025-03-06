@@ -11,6 +11,7 @@ import zipfile
 import io
 import pandas as pd
 import itertools
+import re
 
 from modules.pdf_extraction import (
     get_page_pixel_data,
@@ -35,7 +36,7 @@ if not os.path.exists("logs"):
 # Configure logging
 log_file = os.path.join("logs", "app.log")
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler(log_file),
@@ -102,42 +103,42 @@ with st.sidebar:
     table_in_image = st.checkbox("Image & Inference Mode", value=True, 
                                 help="Enable this mode for: (1) Extracting tables from images within PDFs, (2) Adding creative interpretations like additional columns or values based on user instructions. Note: This mode bypasses text validation for more flexible results.")
     
-    
+    # Add checkbox to include table and page information in output
     add_in_table_and_page_information = st.checkbox("Add table and page information", value=False, 
-                                help="Enable this if you want to add table name, position and page number to the table")
+                                 help="Enable this if you want to add table name, position and page number to the table")
 
     st.markdown("---")  # Add some space with a horizontal line
     
-    # Add model selection dropdown
+    # Model selection dropdown for AI processing
     model = st.selectbox(
         "Select AI model",
         options=["o1", "gpt-4o", "gpt-4o-mini",],
-        index=1
+        index=1  # Default to gpt-4o as recommended option
     )
     
-
-    
-    
+    # Display information about available models to help users make appropriate selection
     st.markdown("""
         <div style="font-size:0.8em; color:gray;">
         <strong>Model information:</strong><br>
-        • <strong>o1</strong>: Advanced model, may handle complex layouts better<br>
+        • <strong>o1</strong>: Advanced but expensive model, may handle complex layouts better<br>
         • <strong>gpt-4o</strong>: Balanced performance, recommended for most tables<br>
         • <strong>gpt-4o-mini</strong>: Faster, lower cost, but may be less accurate for complex tables<br>
 
         </div>
     """, unsafe_allow_html=True)
 
-    # Add file format selection in the sidebar
+    # Add horizontal line for visual separation of sections
     st.markdown("---")
+    
+    # Output format selection section
     st.subheader("Output Format")
     file_format = st.selectbox(
         "Select file format:",
         options=["Excel (.xlsx)", "CSV (.csv)"],
-        index=0
+        index=0  # Default to Excel format
     )
     
-    # Validate inputs - ensure defaults if empty
+    # Input validation logic - ensure sensible defaults if user inputs are empty
     if not file_name.strip():
         file_name = "output_file"
         st.session_state.file_name = file_name
@@ -157,35 +158,39 @@ if uploaded_file:
         tmp_file.write(uploaded_file.getvalue())
         pdf_path = tmp_file.name
     
-    # Load PDF and show preview
+    # Load PDF document and validate it can be opened
     try:
         doc = pymupdf.open(pdf_path)
         total_pages = doc.page_count
         
         st.success(f"Successfully loaded PDF with {total_pages} pages.")
         
-        # Page range selection
+        # Page range selection section - allows users to choose which pages to process
         st.subheader("Page Range Selection")
         range_option = st.radio("Select pages to process:", 
                                ["All pages", "Specific range", "Custom pages"])
         
         if range_option == "All pages":
+            # Process the entire document
             page_indices = list(range(total_pages))
             st.info(f"Processing all {total_pages} pages")
             
         elif range_option == "Specific range":
+            # Allow selection of a continuous range of pages
             col1, col2 = st.columns(2)
             
             # Initialize end_page in session state if it doesn't exist
+            # This preserves the value between reruns of the Streamlit app
             if 'end_page' not in st.session_state:
                 st.session_state.end_page = min(5, total_pages)  # Default to page 5 or max
                 
             with col1:
+                # Start page selection with input validation
                 start_page = st.number_input("Start page", min_value=1, max_value=total_pages, value=1, key="start_page")
             
-            # Update end_page min_value without changing its current value
             with col2:
-                # Initialize or adjust end_page in session state if needed
+                # End page selection with dynamic minimum value based on start page
+                # Ensures end page is always >= start page
                 if 'end_page' not in st.session_state:
                     st.session_state.end_page = min(5, total_pages)  # Default to page 5 or max
                 elif st.session_state.end_page < start_page:
@@ -198,65 +203,76 @@ if uploaded_file:
                     key="end_page"
                 )
             
+            # Convert 1-indexed user input to 0-indexed page indices for processing
             page_indices = list(range(start_page - 1, end_page))
             st.info(f"Processing pages {start_page} to {end_page} (total: {len(page_indices)} pages)")
             
-            # Display start and end page previews
+            # Display preview of start and end pages to help users verify selection
             st.subheader("Range Preview")
             preview_col1, preview_col2 = st.columns(2)
             
             with preview_col1:
                 st.markdown(f"**Start Page ({start_page})**")
                 start_page_index = start_page - 1
+                # Render the start page preview image
                 page = doc.load_page(start_page_index)
-                pix = page.get_pixmap(matrix=pymupdf.Matrix(2, 2))
+                pix = page.get_pixmap(matrix=pymupdf.Matrix(2, 2))  # Scale up for better visibility
                 img_bytes = pix.tobytes("png")
                 st.image(img_bytes, caption=f"Page {start_page}", use_container_width=True)
             
             with preview_col2:
                 st.markdown(f"**End Page ({end_page})**")
                 end_page_index = end_page - 1
+                # Render the end page preview image
                 page = doc.load_page(end_page_index)
-                pix = page.get_pixmap(matrix=pymupdf.Matrix(2, 2))
+                pix = page.get_pixmap(matrix=pymupdf.Matrix(2, 2))  # Scale up for better visibility
                 img_bytes = pix.tobytes("png")
                 st.image(img_bytes, caption=f"Page {end_page}", use_container_width=True)
             
-        else:  # Custom pages
+        else:  # Custom pages option
+            # Allow selection of non-consecutive pages using comma-separated list
             custom_pages = st.text_input("Enter page numbers separated by commas (e.g., 1,3,5,8)")
             preview_button = st.button("Preview Pages")
             
+            # Process and preview custom pages when requested or when using previously entered values
             if custom_pages and (preview_button or 'custom_pages_last' in st.session_state and st.session_state.custom_pages_last == custom_pages):
                 try:
                     # Store current custom pages value in session state to maintain preview between interactions
                     st.session_state.custom_pages_last = custom_pages
                     
+                    # Parse and validate the page numbers entered by the user
                     page_nums = [int(p.strip()) for p in custom_pages.split(",")]
-                    # Validate page numbers
+                    # Filter out invalid page numbers
                     valid_pages = [p for p in page_nums if 1 <= p <= total_pages]
-                    page_indices = [p - 1 for p in valid_pages]  # Convert to 0-based indices
+                    page_indices = [p - 1 for p in valid_pages]  # Convert to 0-based indices for internal use
                     
+                    # Warn if some entered page numbers were invalid
                     if len(valid_pages) != len(page_nums):
                         st.warning(f"Some page numbers were out of range and will be ignored. Valid range: 1-{total_pages}")
                     
                     st.info(f"Processing {len(page_indices)} pages: {', '.join(map(str, valid_pages))}")
                     
-                    # Display previews of custom pages (up to 4)
+                    # Display previews of custom pages (up to 4 to avoid overcrowding the UI)
                     if valid_pages:
                         st.subheader("Page Previews")
                         preview_pages = valid_pages[:4]  # Show max 4 previews
                         
+                        # Create a dynamic number of columns based on the preview pages
                         columns = st.columns(min(len(preview_pages), 4))
                         for i, page_num in enumerate(preview_pages):
                             with columns[i]:
                                 st.markdown(f"**Page {page_num}**")
+                                # Render the preview for each selected page
                                 page = doc.load_page(page_num - 1)
                                 pix = page.get_pixmap(matrix=pymupdf.Matrix(2, 2))
                                 img_bytes = pix.tobytes("png")
                                 st.image(img_bytes, caption=f"Page {page_num}", use_container_width=True)
                         
+                        # Indicate if not all selected pages are shown in the preview
                         if len(valid_pages) > 4:
                             st.info(f"Showing first 4 of {len(valid_pages)} selected pages")
                 except ValueError:
+                    # Handle invalid input (non-numeric values)
                     st.error("Please enter valid page numbers separated by commas")
                     page_indices = []
             else:
@@ -280,35 +296,53 @@ if uploaded_file:
                 st.session_state.processing_complete = False
                 st.session_state.output_final = []
                 
-                # Show progress
+                # Show progress indicators for the processing
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 
                 async def process_pages():
+                    """
+                    Asynchronously processes PDF pages to extract tables.
+                    
+                    This function:
+                    1. Creates tasks for each selected page
+                    2. Extracts both text and image data from each page
+                    3. Validates and identifies tables using AI
+                    4. Processes identified tables into DataFrame objects
+                    5. Updates progress indicators throughout the process
+                    6. Handles errors and retries when necessary
+                    
+                    Returns a list of processed table data
+                    """
                     tasks = []
                     results_output = []
                     
                     try:
                         status_text.text("Initializing page processing...")
                         
+                        # Process each page concurrently using async TaskGroup
                         async with asyncio.TaskGroup() as tg:
                             for i, page_no in enumerate(page_indices):
                                 status_text.text(f"Processing page {page_no + 1}...")
                                 progress_bar.progress((i / len(page_indices)) * 0.5)  # Update to 50% through the process
                                 
+                                # Load the current page from the document
                                 page = doc.load_page(page_no)
                                 
                                 if not table_in_image:
-                                # Check for the presence of tables with pymupdf. This will mean images with tables will be ignored. 
+                                # Check for tables using PyMuPDF's table detection
+                                # If table_in_image is False, skip pages with no tables detected by PyMuPDF
                                     tabs = page.find_tables()
                                     num_tables_0 = len(tabs.tables)
                                     
                                     if num_tables_0 == 0:
                                         st.info(f"No tables found on page {page_no + 1}")
                                         continue
-                                    
+                                
+                                # Extract text content from the page
                                 extracted_text = page.get_text()
                                 
+                                # Convert the page to an image for AI vision processing
                                 base64_image = get_page_pixel_data(
                                     pdf_path=pdf_path,
                                     page_no=page_no,
@@ -316,6 +350,7 @@ if uploaded_file:
                                     image_type='png'
                                 )
                                 
+                                # Use AI to identify and validate tables on the page
                                 num_tables, table_headers, _ = await get_validated_table_info(
                                     text_input=extracted_text,
                                     user_text=user_text,
@@ -334,6 +369,8 @@ if uploaded_file:
                                     continue
                                 
                                 
+                                # Create an asynchronous task for processing each table
+                                # This allows concurrent processing of tables across multiple pages
                                 tasks.append(tg.create_task(process_tables_to_df(
                                     table_headers,
                                     user_text,
@@ -346,7 +383,7 @@ if uploaded_file:
                                     model
                                 )))
                             
-                            # Await all tasks to complete
+                            # Await all tasks to complete and collect results
                             for j, task in enumerate(tasks):
                                 results_output.append(await task)
                                 progress_bar.progress(0.5 + ((j + 1) / len(tasks)) * 0.5)  # Update from 50% to 100%
@@ -355,38 +392,38 @@ if uploaded_file:
                         return results_output
                         
                     except Exception as e:
+                        # Handle any errors during processing
                         st.error("An issue occurred during processing. Please try again. If the issue persists, try with a different page range or check your PDF file.")
                         logging.error(f"Processing error details: {str(e)}")
                         return []
                 
-                # Start processing
+                # Start the asynchronous processing workflow
                 start_time = time.time()
                 with st.spinner("Processing PDF tables..."):
+                    # Run the async function in the main thread
                     output_final = asyncio.run(process_pages())
-                    # Store the output in session state
+                    # Store the output in session state for persistence between Streamlit reruns
                     st.session_state.output_final = output_final
                     st.session_state.processing_complete = True
                 
-                # Calculate elapsed time
+                # Calculate and display processing time for performance feedback
                 end_time = time.time()
                 elapsed_time = end_time - start_time
                 st.success(f"Processing completed in {elapsed_time:.2f} seconds")
             
-            # Check if processing has been completed (either in this run or a previous one)
+            # Results display section - shows after processing is complete
             if st.session_state.processing_complete:
                 output_final = st.session_state.output_final
                 
                 # Only show preview and download options if we have results
                 if output_final and len(output_final) > 0:
-                    # Add a preview section
-                    # st.subheader("Data Preview")
-                    
-
-                    # Add a toggle to show/hide the preview
+                    # Add a toggle to control preview visibility
+                    # This helps manage UI complexity for large results
                     show_preview = st.checkbox("Show data preview", value=True)
                     
                     if show_preview:
-                        # Add format selection for preview
+                        # Let user select how to format the preview
+                        # Different formats are useful for different use cases
                         preview_format = st.selectbox(
                             "Select preview format:",
                             options=["Format 1: All tables concatenated", 
